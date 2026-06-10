@@ -344,7 +344,7 @@ function cambiarTab(tabId, el) {
 function renderListaOperadores() {
   const cont = document.getElementById('lista-operadores');
   cont.innerHTML = operadoresDB.filter(o => o.nombre).map(op => `
-    <div class="op-btn" onclick="abrirOrdenOperador('${op.nombre}')">
+    <div class="op-btn" onclick="modoContraloria=false; eppChecks={}; abrirOrdenOperador('${op.nombre}')">
       <div class="op-nombre">${op.nombre}</div>
       <div class="op-tractor">${op.tractor || ''} · ${op.pulverizadora || ''}</div>
     </div>
@@ -352,7 +352,15 @@ function renderListaOperadores() {
 }
 
 // ── ORDEN OPERADOR ──
+let modoContraloria = false;
+
+function abrirOrdenDesdeContraloria(nombre) {
+  modoContraloria = true;
+  abrirOrdenOperador(nombre);
+}
+
 function abrirOrdenOperador(nombre) {
+  if (!modoContraloria) modoContraloria = false;
   const orden = ordenesDB.find(o => o.operador_nombre === nombre || (o.operator_name && o.operator_name.toUpperCase().includes(nombre.split(' ')[0])));
   const operador = operadoresDB.find(o => o.nombre === nombre);
 
@@ -403,14 +411,31 @@ function abrirOrdenOperador(nombre) {
     <div class="card">
       <div class="card-header">
         <div class="card-header-icon" style="background:#e8f4fd">🌡️</div>
-        <div class="card-titulo">Condiciones al momento de aplicar</div>
+        <div class="card-titulo">Condiciones climáticas</div>
       </div>
       <div class="card-body">
-        <div class="clima-row">
+        <p style="font-size:11px;color:var(--gris);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">Planificadas (según orden)</p>
+        <div class="clima-row" style="margin-bottom:16px">
           <div class="clima-item"><div class="clima-valor">${orden.temperatura || '—'}</div><div class="clima-label">Temperatura</div></div>
           <div class="clima-item"><div class="clima-valor">${orden.viento || '—'}</div><div class="clima-label">Viento</div></div>
           <div class="clima-item"><div class="clima-valor">${orden.humedad || '—'}</div><div class="clima-label">Humedad</div></div>
         </div>
+        ${modoContraloria ? `
+        <p style="font-size:11px;color:var(--amarillo);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">Reales al momento (estación campo)</p>
+        <div class="clima-row" style="margin-bottom:12px">
+          <div class="clima-item">
+            <input type="text" id="clima-temp-real" placeholder="ej: 12°C" style="width:100%;text-align:center;border:1px solid var(--borde);border-radius:6px;padding:6px;font-size:14px;font-weight:700;color:var(--verde)"/>
+            <div class="clima-label" style="margin-top:4px">Temperatura</div>
+          </div>
+          <div class="clima-item">
+            <input type="text" id="clima-viento-real" placeholder="ej: 3 km/h" style="width:100%;text-align:center;border:1px solid var(--borde);border-radius:6px;padding:6px;font-size:14px;font-weight:700;color:var(--verde)"/>
+            <div class="clima-label" style="margin-top:4px">Viento</div>
+          </div>
+          <div class="clima-item">
+            <input type="text" id="clima-hum-real" placeholder="ej: 60%HR" style="width:100%;text-align:center;border:1px solid var(--borde);border-radius:6px;padding:6px;font-size:14px;font-weight:700;color:var(--verde)"/>
+            <div class="clima-label" style="margin-top:4px">Humedad</div>
+          </div>
+        </div>` : ''}
       </div>
     </div>
 
@@ -452,7 +477,23 @@ function abrirOrdenOperador(nombre) {
       </div>
       <div id="epp-contenido" style="display:none">
         <div class="card-body">
-          <p style="font-size:12px;color:var(--rojo);font-weight:600;margin-bottom:12px">⚠️ OBLIGATORIO usar TODO el siguiente equipo antes de iniciar la aplicación</p>
+          ${modoContraloria ? `
+          <p style="font-size:12px;color:var(--amarillo);font-weight:600;margin-bottom:12px">✅ Marcar EPP verificado en terreno</p>
+          <div style="display:grid;gap:8px">
+            ${epp.map((e, i) => `
+              <label style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--gris-claro);border-radius:8px;cursor:pointer;border:2px solid transparent" 
+                     id="epp-label-${i}"
+                     onclick="toggleCheckEPP(${i}, this)">
+                <div style="width:24px;height:24px;border:2px solid var(--borde);border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:white" id="epp-check-${i}"></div>
+                <span style="font-size:20px">${EPP_ICONOS[e] || '🔒'}</span>
+                <span style="font-size:13px;font-weight:500">${e}</span>
+              </label>
+            `).join('')}
+          </div>
+          <div style="margin-top:12px;padding:10px 12px;background:var(--verde-bg);border-radius:8px;font-size:12px;color:var(--verde);font-weight:600" id="epp-resumen">
+            0 / ${epp.length} EPP verificados
+          </div>` : `
+          <p style="font-size:12px;color:var(--rojo);font-weight:600;margin-bottom:12px">⚠️ OBLIGATORIO usar TODO el siguiente equipo antes de iniciar</p>
           <div class="epp-grid">
             ${epp.map(e => `
               <div class="epp-item">
@@ -460,7 +501,7 @@ function abrirOrdenOperador(nombre) {
                 <span class="epp-texto">${e}</span>
               </div>
             `).join('')}
-          </div>
+          </div>`}
         </div>
       </div>
     </div>
@@ -481,6 +522,35 @@ function abrirOrdenOperador(nombre) {
   `;
 
   mostrarVista('v-orden-operador');
+}
+
+let eppChecks = {};
+
+function toggleCheckEPP(i, label) {
+  eppChecks[i] = !eppChecks[i];
+  const check = document.getElementById(`epp-check-${i}`);
+  if (eppChecks[i]) {
+    check.innerHTML = '✓';
+    check.style.background = 'var(--verde)';
+    check.style.borderColor = 'var(--verde)';
+    check.style.color = 'white';
+    label.style.borderColor = 'var(--verde-claro)';
+    label.style.background = 'var(--verde-bg)';
+  } else {
+    check.innerHTML = '';
+    check.style.background = 'white';
+    check.style.borderColor = 'var(--borde)';
+    label.style.borderColor = 'transparent';
+    label.style.background = 'var(--gris-claro)';
+  }
+  const total = Object.keys(eppChecks).length;
+  const marcados = Object.values(eppChecks).filter(Boolean).length;
+  const resumen = document.getElementById('epp-resumen');
+  if (resumen) {
+    const allEpp = document.querySelectorAll('[id^="epp-label-"]').length;
+    resumen.textContent = `${marcados} / ${allEpp} EPP verificados`;
+    resumen.style.background = marcados === allEpp ? '#e0f0dc' : 'var(--verde-bg)';
+  }
 }
 
 function toggleEPP() {
@@ -523,7 +593,7 @@ function renderContraloria() {
 
   // Lista órdenes
   document.getElementById('ordenes-lista').innerHTML = ordenesHoy.map(o => `
-    <div class="orden-lista-item" onclick="abrirOrdenOperador('${o.operador_nombre || o.operator_name || ''}')">
+    <div class="orden-lista-item" onclick="modoContraloria=true; abrirOrdenOperador('${o.operador_nombre || o.operator_name || ''}')">>
       <div class="orden-lista-header">
         <div class="orden-lista-titulo">OA ${o.nro_orden || o.code_oa} — ${o.especie || ''}</div>
         <span class="badge badge-verde">Activa</span>
