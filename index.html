@@ -527,10 +527,48 @@ function abrirOrdenOperador(nombre) {
       </div>
       <div class="card-body">
 
-        <p style="font-size:11px;color:var(--gris);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Verificación producto</p>
+        <!-- CALCULADORA DOSIS -->
+        <p style="font-size:11px;color:var(--gris);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Verificación de dosis real</p>
+        <div style="background:var(--gris-claro);border-radius:10px;padding:12px;margin-bottom:6px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+            <div>
+              <div style="font-size:11px;color:var(--gris);margin-bottom:4px">Litros ordenados</div>
+              <div style="font-size:16px;font-weight:700;color:var(--verde)">${((orden.mojamiento||0) * (orden.hectareas||0)).toFixed(0)} L</div>
+              <div style="font-size:10px;color:var(--gris)">${orden.mojamiento||0} L/ha × ${orden.hectareas||0} ha</div>
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--gris);margin-bottom:4px">Producto ordenado</div>
+              <div style="font-size:16px;font-weight:700;color:var(--verde)">${orden.productos?.[0]?.dosis_ha || orden.productos?.[0]?.dose || '—'}</div>
+              <div style="font-size:10px;color:var(--gris)">${orden.productos?.[0]?.dosis_100l || '—'} / 100L</div>
+            </div>
+          </div>
+          <div style="border-top:1px solid var(--borde);padding-top:10px">
+            <div style="font-size:11px;color:var(--amarillo);font-weight:600;margin-bottom:8px">Ingresa lo real aplicado:</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div>
+                <div style="font-size:11px;color:var(--gris);margin-bottom:4px">Litros reales (L)</div>
+                <input type="number" id="dosis-litros-real" placeholder="ej: 11500"
+                  style="width:100%;padding:10px;border:2px solid var(--borde);border-radius:8px;font-size:15px;font-weight:700;text-align:center"
+                  oninput="calcularDesvio(${(orden.mojamiento||0) * (orden.hectareas||0)}, '${orden.productos?.[0]?.dosis_100l || ''}')"
+                  onfocus="this.style.borderColor='var(--amarillo)'"
+                  onblur="this.style.borderColor='var(--borde)'"/>
+              </div>
+              <div>
+                <div style="font-size:11px;color:var(--gris);margin-bottom:4px">Producto real (kg/L)</div>
+                <input type="number" id="dosis-producto-real" placeholder="ej: 15.8"
+                  style="width:100%;padding:10px;border:2px solid var(--borde);border-radius:8px;font-size:15px;font-weight:700;text-align:center"
+                  oninput="calcularDesvio(${(orden.mojamiento||0) * (orden.hectareas||0)}, '${orden.productos?.[0]?.dosis_100l || ''}')"
+                  onfocus="this.style.borderColor='var(--amarillo)'"
+                  onblur="this.style.borderColor='var(--borde)'"/>
+              </div>
+            </div>
+          </div>
+          <div id="dosis-resultado" style="display:none;margin-top:10px;padding:10px;border-radius:8px;font-size:13px;font-weight:600;text-align:center"></div>
+        </div>
+
+        <p style="font-size:11px;color:var(--gris);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin:14px 0 8px">Verificación producto</p>
         ${[
           'Producto correcto según orden',
-          'Dosis preparada correcta',
           'Etiqueta del envase coincide con la OA'
         ].map((item, i) => `
           <label style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--gris-claro);border-radius:8px;cursor:pointer;border:2px solid transparent;margin-bottom:6px"
@@ -546,8 +584,8 @@ function abrirOrdenOperador(nombre) {
           'Equipo (tractor/pulverizadora) correcto según orden'
         ].map((item, i) => `
           <label style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--gris-claro);border-radius:8px;cursor:pointer;border:2px solid transparent;margin-bottom:6px"
-                 id="cq-label-${i+3}" onclick="toggleCQ(${i+3}, this)">
-            <div style="width:22px;height:22px;border:2px solid var(--borde);border-radius:5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:white;font-size:13px" id="cq-check-${i+3}"></div>
+                 id="cq-label-${i+2}" onclick="toggleCQ(${i+2}, this)">
+            <div style="width:22px;height:22px;border:2px solid var(--borde);border-radius:5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:white;font-size:13px" id="cq-check-${i+2}"></div>
             <span style="font-size:13px">${item}</span>
           </label>`).join('')}
 
@@ -559,8 +597,8 @@ function abrirOrdenOperador(nombre) {
           'Señalización con bandera roja en zona aplicada'
         ].map((item, i) => `
           <label style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--gris-claro);border-radius:8px;cursor:pointer;border:2px solid transparent;margin-bottom:6px"
-                 id="cq-label-${i+6}" onclick="toggleCQ(${i+6}, this)">
-            <div style="width:22px;height:22px;border:2px solid var(--borde);border-radius:5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:white;font-size:13px" id="cq-check-${i+6}"></div>
+                 id="cq-label-${i+5}" onclick="toggleCQ(${i+5}, this)">
+            <div style="width:22px;height:22px;border:2px solid var(--borde);border-radius:5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:white;font-size:13px" id="cq-check-${i+5}"></div>
             <span style="font-size:13px">${item}</span>
           </label>`).join('')}
 
@@ -571,7 +609,7 @@ function abrirOrdenOperador(nombre) {
           onblur="this.style.borderColor='var(--borde)'"></textarea>
 
         <div style="margin-top:12px;padding:10px 12px;background:var(--amarillo-bg);border-radius:8px;font-size:12px;color:var(--amarillo);font-weight:600" id="cq-resumen">
-          0 / 10 items verificados
+          0 / 9 items verificados
         </div>
 
         <button onclick="guardarChecklist()" style="width:100%;margin-top:12px;padding:14px;background:var(--amarillo);color:white;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer">
@@ -584,6 +622,41 @@ function abrirOrdenOperador(nombre) {
   `;
 
   mostrarVista('v-orden-operador');
+}
+
+function calcularDesvio(litrosOrdenados, dosis100L) {
+  const litrosReal = parseFloat(document.getElementById('dosis-litros-real')?.value);
+  const productoReal = parseFloat(document.getElementById('dosis-producto-real')?.value);
+  const resultado = document.getElementById('dosis-resultado');
+  if (!resultado) return;
+
+  if (!litrosReal && !productoReal) { resultado.style.display = 'none'; return; }
+  resultado.style.display = 'block';
+
+  let msgs = [];
+
+  // Desvío litros
+  if (litrosReal && litrosOrdenados > 0) {
+    const desvioL = ((litrosReal - litrosOrdenados) / litrosOrdenados * 100).toFixed(1);
+    const ok = Math.abs(desvioL) <= 5;
+    msgs.push(`${ok ? '✅' : '⚠️'} Litros: ${litrosReal}L real vs ${litrosOrdenados}L ordenado (${desvioL > 0 ? '+' : ''}${desvioL}%)`);
+  }
+
+  // Desvío producto — calcula dosis esperada según litros reales
+  if (productoReal && litrosReal && dosis100L) {
+    const dosisNum = parseFloat(dosis100L);
+    if (dosisNum > 0) {
+      const productoEsperado = (litrosReal / 100 * dosisNum / 1000); // cc→L o g→kg
+      const desvioP = ((productoReal - productoEsperado) / productoEsperado * 100).toFixed(1);
+      const ok = Math.abs(desvioP) <= 5;
+      msgs.push(`${ok ? '✅' : '⚠️'} Producto: ${productoReal} real vs ${productoEsperado.toFixed(2)} esperado (${desvioP > 0 ? '+' : ''}${desvioP}%)`);
+    }
+  }
+
+  const hayError = msgs.some(m => m.startsWith('⚠️'));
+  resultado.style.background = hayError ? 'var(--rojo-bg)' : '#e0f0dc';
+  resultado.style.color = hayError ? 'var(--rojo)' : 'var(--verde)';
+  resultado.innerHTML = msgs.join('<br>');
 }
 
 let cqChecks = {};
@@ -605,12 +678,13 @@ function toggleCQ(i, label) {
     label.style.borderColor = 'transparent';
     label.style.background = 'var(--gris-claro)';
   }
+  const allItems = document.querySelectorAll('[id^="cq-label-"]').length;
   const marcados = Object.values(cqChecks).filter(Boolean).length;
   const resumen = document.getElementById('cq-resumen');
   if (resumen) {
-    resumen.textContent = `${marcados} / 10 items verificados`;
-    resumen.style.background = marcados === 10 ? '#e0f0dc' : 'var(--amarillo-bg)';
-    resumen.style.color = marcados === 10 ? 'var(--verde)' : 'var(--amarillo)';
+    resumen.textContent = `${marcados} / ${allItems} items verificados`;
+    resumen.style.background = marcados === allItems ? '#e0f0dc' : 'var(--amarillo-bg)';
+    resumen.style.color = marcados === allItems ? 'var(--verde)' : 'var(--amarillo)';
   }
 }
 
