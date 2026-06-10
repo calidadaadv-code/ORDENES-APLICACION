@@ -511,10 +511,72 @@ function abrirOrdenOperador(nombre) {
     <div class="card">
       <div class="card-header">
         <div class="card-header-icon" style="background:var(--amarillo-bg)">📝</div>
-        <div class="card-titulo">Observaciones</div>
+        <div class="card-titulo">Observaciones de la orden</div>
       </div>
       <div class="card-body">
         <p style="font-size:13px;line-height:1.6;color:var(--texto-suave)">${orden.observaciones}</p>
+      </div>
+    </div>` : ''}
+
+    <!-- CHECKLIST CONTRALORÍA -->
+    ${modoContraloria ? `
+    <div class="card" style="border-color:var(--amarillo)">
+      <div class="card-header" style="background:var(--amarillo-bg)">
+        <div class="card-header-icon" style="background:white">🔍</div>
+        <div class="card-titulo" style="color:var(--amarillo)">Checklist Control de Calidad</div>
+      </div>
+      <div class="card-body">
+
+        <p style="font-size:11px;color:var(--gris);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Verificación producto</p>
+        ${[
+          'Producto correcto según orden',
+          'Dosis preparada correcta',
+          'Etiqueta del envase coincide con la OA'
+        ].map((item, i) => `
+          <label style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--gris-claro);border-radius:8px;cursor:pointer;border:2px solid transparent;margin-bottom:6px"
+                 id="cq-label-${i}" onclick="toggleCQ(${i}, this)">
+            <div style="width:22px;height:22px;border:2px solid var(--borde);border-radius:5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:white;font-size:13px" id="cq-check-${i}"></div>
+            <span style="font-size:13px">${item}</span>
+          </label>`).join('')}
+
+        <p style="font-size:11px;color:var(--gris);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin:14px 0 8px">Verificación terreno</p>
+        ${[
+          'Operador en el cuartel correcto',
+          'Inicio en horario establecido',
+          'Equipo (tractor/pulverizadora) correcto según orden'
+        ].map((item, i) => `
+          <label style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--gris-claro);border-radius:8px;cursor:pointer;border:2px solid transparent;margin-bottom:6px"
+                 id="cq-label-${i+3}" onclick="toggleCQ(${i+3}, this)">
+            <div style="width:22px;height:22px;border:2px solid var(--borde);border-radius:5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:white;font-size:13px" id="cq-check-${i+3}"></div>
+            <span style="font-size:13px">${item}</span>
+          </label>`).join('')}
+
+        <p style="font-size:11px;color:var(--gris);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin:14px 0 8px">Verificación aplicación</p>
+        ${[
+          'Velocidad de trabajo adecuada',
+          'Presión de boquillas calibrada',
+          'Sin derrames ni fugas visibles',
+          'Señalización con bandera roja en zona aplicada'
+        ].map((item, i) => `
+          <label style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--gris-claro);border-radius:8px;cursor:pointer;border:2px solid transparent;margin-bottom:6px"
+                 id="cq-label-${i+6}" onclick="toggleCQ(${i+6}, this)">
+            <div style="width:22px;height:22px;border:2px solid var(--borde);border-radius:5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:white;font-size:13px" id="cq-check-${i+6}"></div>
+            <span style="font-size:13px">${item}</span>
+          </label>`).join('')}
+
+        <p style="font-size:11px;color:var(--gris);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin:14px 0 8px">Observaciones de terreno</p>
+        <textarea id="cq-observaciones" placeholder="Anota cualquier incidencia, desvío o comentario relevante..."
+          style="width:100%;padding:12px;border:1px solid var(--borde);border-radius:8px;font-size:13px;min-height:80px;resize:vertical;font-family:inherit;line-height:1.5"
+          onfocus="this.style.borderColor='var(--amarillo)'"
+          onblur="this.style.borderColor='var(--borde)'"></textarea>
+
+        <div style="margin-top:12px;padding:10px 12px;background:var(--amarillo-bg);border-radius:8px;font-size:12px;color:var(--amarillo);font-weight:600" id="cq-resumen">
+          0 / 10 items verificados
+        </div>
+
+        <button onclick="guardarChecklist()" style="width:100%;margin-top:12px;padding:14px;background:var(--amarillo);color:white;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer">
+          💾 Guardar revisión
+        </button>
       </div>
     </div>` : ''}
 
@@ -522,6 +584,46 @@ function abrirOrdenOperador(nombre) {
   `;
 
   mostrarVista('v-orden-operador');
+}
+
+let cqChecks = {};
+
+function toggleCQ(i, label) {
+  cqChecks[i] = !cqChecks[i];
+  const check = document.getElementById(`cq-check-${i}`);
+  if (cqChecks[i]) {
+    check.innerHTML = '✓';
+    check.style.background = 'var(--amarillo)';
+    check.style.borderColor = 'var(--amarillo)';
+    check.style.color = 'white';
+    label.style.borderColor = 'var(--amarillo)';
+    label.style.background = 'var(--amarillo-bg)';
+  } else {
+    check.innerHTML = '';
+    check.style.background = 'white';
+    check.style.borderColor = 'var(--borde)';
+    label.style.borderColor = 'transparent';
+    label.style.background = 'var(--gris-claro)';
+  }
+  const marcados = Object.values(cqChecks).filter(Boolean).length;
+  const resumen = document.getElementById('cq-resumen');
+  if (resumen) {
+    resumen.textContent = `${marcados} / 10 items verificados`;
+    resumen.style.background = marcados === 10 ? '#e0f0dc' : 'var(--amarillo-bg)';
+    resumen.style.color = marcados === 10 ? 'var(--verde)' : 'var(--amarillo)';
+  }
+}
+
+function guardarChecklist() {
+  const marcados = Object.values(cqChecks).filter(Boolean).length;
+  const obs = document.getElementById('cq-observaciones')?.value || '';
+  const climaTemp = document.getElementById('clima-temp-real')?.value || '';
+  const climaViento = document.getElementById('clima-viento-real')?.value || '';
+  const climaHum = document.getElementById('clima-hum-real')?.value || '';
+
+  // Aquí se guardará en Supabase cuando conectemos la API
+  // Por ahora confirmación visual
+  alert(`✅ Revisión guardada\n\n${marcados}/10 items verificados\nClima real: ${climaTemp} · ${climaViento} · ${climaHum}\n${obs ? 'Obs: ' + obs : 'Sin observaciones'}\n\nPróximamente se guardará automáticamente en Supabase.`);
 }
 
 let eppChecks = {};
