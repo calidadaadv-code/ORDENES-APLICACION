@@ -246,18 +246,32 @@ function cerrarModal() {
 
 // ── DATOS DE EJEMPLO (se reemplazarán con datos reales de Supabase) ──
 const OPERADORES = [
-  { nombre: "JUAN CARLOS RIVEROS", tractor: "MF15", pulverizadora: "CAFFINI", telefono: "56961176393", venc_licencia: "2025-08-15" },
-  { nombre: "LUIS SUAREZ", tractor: "MF18", pulverizadora: "CAFFINI", telefono: "56997800166", venc_licencia: "2026-12-01" },
-  { nombre: "MANUEL CATALAN", tractor: "MF16", pulverizadora: "CAFFINI", telefono: "56992623438", venc_licencia: "2026-03-20" },
-  { nombre: "PATRICIO PALMA", tractor: "MF12", pulverizadora: "CAFFINI", telefono: "56989751378", venc_licencia: "2026-09-10" },
-  { nombre: "IVAN RETAMALES", tractor: "MF13", pulverizadora: "CAFFINI", telefono: "56946646012", venc_licencia: "2025-11-30" },
-  { nombre: "CRISTIAN SERRANO", tractor: "MF10", pulverizadora: "CAFFINI", telefono: "56958625946", venc_licencia: "2027-01-15" },
-  { nombre: "FELIPE PLAZA", tractor: "MF17", pulverizadora: "CAFFINI", telefono: "56968087416", venc_licencia: "2026-06-30" },
-  { nombre: "ISIDRO VALDEZ", tractor: "MF11", pulverizadora: "CAFFINI", telefono: "56954366494", venc_licencia: "2025-07-01" },
-  { nombre: "AUDELINO MANCILLA", tractor: "K08", pulverizadora: "CAFFINI", telefono: "56985853806", venc_licencia: "2026-04-20" },
-  { nombre: "CARLOS CATALAN", tractor: "CUATRIMOTO", pulverizadora: "MOTO HERBICIDA", telefono: "56953377989", venc_licencia: "2026-11-01" },
-  { nombre: "FELIPE ARRAÑO", tractor: "CUATRIMOTO", pulverizadora: "MOTO HERBICIDA", telefono: "56992521569", venc_licencia: "2027-02-28" },
-  { nombre: "MIGUEL ABARCA", tractor: "M14", pulverizadora: "CAFFINI", telefono: "56991776255", venc_licencia: "2026-08-15" },
+  // TRACTORISTAS
+  { rut: "7307747-8",  nombre: "CALDERON HUENCHO HERNAN ENRIQUE",   cargo: "TRACTORISTA",          contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "NO",  venc_sag: null },
+  { rut: "9063916-1",  nombre: "FUENTES MATELUNA ANGEL PATRICIO",    cargo: "TRACTORISTA",          contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null },
+  { rut: "11359721-6", nombre: "ABARCA ARAYA MIGUEL",                cargo: "TRACTORISTA",          contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null },
+  { rut: "9094978-0",  nombre: "OYANEDEL JOSE DOMINGO",              cargo: "TRACTORISTA",          contrato: "PLAZO FIJO 2 MESES", area: "MAQUINARIA", licencia: "",      venc_licencia: null,         carnet_sag: "",    venc_sag: null },
+  // APLICADORES
+  { rut: "10301378-k", nombre: "CATALAN CARREÑO MANUEL EULOGIO",     cargo: "APLICADOR",            contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null },
+  { rut: "12630318-1", nombre: "VALDES MARTINEZ ISIDRO NICOLAS",     cargo: "APLICADOR",            contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null },
+  { rut: "18774229-3", nombre: "MANCILLA MANCILLA AUDELINO ANTONIO", cargo: "APLICADOR",            contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null },
+  { rut: "10781871-5", nombre: "PLAZA PEREZ FELIPE ORLANDO",         cargo: "APLICADOR",            contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null },
+  { rut: "18214040-6", nombre: "RETAMALES DUARTE FERNANDO IVAN",     cargo: "APLICADOR",            contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "B-D",     venc_licencia: "2026-07-31", carnet_sag: "SI",  venc_sag: "2027-05-01" },
+  { rut: "9512251-5",  nombre: "RIVEROS ULLOA JUAN CARLOS",          cargo: "APLICADOR",            contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "B-C-D",   venc_licencia: "2032-08-12", carnet_sag: "SI",  venc_sag: "2028-03-01" },
+  { rut: "11391345-2", nombre: "SERRANO ARRAÑO CRISTIAN DEL CARMEN", cargo: "APLICADOR",            contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null },
+  { rut: "9336731-6",  nombre: "SUAREZ FABIA LUIS ERNESTO",          cargo: "APLICADOR",            contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "B-D",     venc_licencia: "2028-12-07", carnet_sag: "SI",  venc_sag: "2027-05-01" },
+  { rut: "13559047-9", nombre: "PALMA PATRICIO ALEJANDRO",           cargo: "APLICADOR",            contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "A2-A4-D", venc_licencia: "2027-12-12", carnet_sag: "SI",  venc_sag: "2030-06-01" },
+  // APLICADORES HERBICIDA
+  { rut: "10301378-K", nombre: "CATALAN VALLADARES CARLOS MAURICIO", cargo: "APLICADOR HERBICIDA",  contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null },
+  { rut: "17786316-5", nombre: "ARRAÑO MEZA FELIPE IGNACIO",         cargo: "APLICADOR HERBICIDA",  contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "C",       venc_licencia: "2027-09-26", carnet_sag: "SI",  venc_sag: "2030-09-01" },
+  // RIEGO
+  { rut: "21417558-4", nombre: "CARREÑO VERA FELIPE IGNACIO",        cargo: "AYUDANTE DOSIFICADOR", contrato: "INDEFINIDO",       area: "RIEGO",      licencia: "N/A",     venc_licencia: null,         carnet_sag: "SI",  venc_sag: "2031-05-01" },
+  { rut: "10711332-0", nombre: "JOSE OLIVARES",                      cargo: "AYUDANTE DOSIFICADOR", contrato: "INDEFINIDO",       area: "RIEGO",      licencia: "N/A",     venc_licencia: null,         carnet_sag: "",    venc_sag: null },
+  { rut: "15927371-7", nombre: "ARAOS SERGIO",                       cargo: "ENCARGADO CASETA",     contrato: "INDEFINIDO",       area: "RIEGO",      licencia: "N/A",     venc_licencia: null,         carnet_sag: "SI",  venc_sag: "2026-08-01" },
+  { rut: "26654119-8", nombre: "MAMONTEL KENOLD",                    cargo: "ENCARGADO CASETA",     contrato: "INDEFINIDO",       area: "RIEGO",      licencia: "N/A",     venc_licencia: null,         carnet_sag: "",    venc_sag: null },
+  // DOSIFICADORES
+  { rut: "21600718-4", nombre: "YAÑEZ VERA ALEXIS CRISTOBAL",        cargo: "DOSIFICADOR",          contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "N/A",     venc_licencia: null,         carnet_sag: "SI",  venc_sag: "2030-12-01" },
+  { rut: "20311567-9", nombre: "ESPINOZA ROJAS JOSE ANDRES",         cargo: "DOSIFICADOR",          contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "N/A",     venc_licencia: null,         carnet_sag: "SI",  venc_sag: "2030-03-01" },
 ];
 
 const ORDENES = [
@@ -354,7 +368,7 @@ function renderListaOperadores() {
   cont.innerHTML = operadoresDB.filter(o => o.nombre).map(op => `
     <div class="op-btn" onclick="modoContraloria=false; eppChecks={}; abrirOrdenOperador('${op.nombre}')">
       <div class="op-nombre">${op.nombre}</div>
-      <div class="op-tractor">${op.tractor || ''} · ${op.pulverizadora || ''}</div>
+      <div class="op-tractor">${op.cargo || ''} · ${op.area || ''}</div>
     </div>
   `).join('');
 }
@@ -793,21 +807,32 @@ function renderContraloria() {
 
   // Lista operadores
   document.getElementById('operadores-lista').innerHTML = operadoresDB.filter(o => o.nombre).map(op => {
-    const dias = op.venc_licencia ? Math.round((new Date(op.venc_licencia) - new Date()) / 86400000) : null;
+    const diasLic = op.venc_licencia ? Math.round((new Date(op.venc_licencia) - new Date()) / 86400000) : null;
+    const diasSag = op.venc_sag ? Math.round((new Date(op.venc_sag) - new Date()) / 86400000) : null;
     const iniciales = op.nombre.split(' ').slice(0,2).map(p=>p[0]).join('');
     let licBadge = '';
-    if (dias !== null) {
-      if (dias < 0) licBadge = `<span class="badge badge-rojo">Vencida</span>`;
-      else if (dias <= 30) licBadge = `<span class="badge badge-amarillo">Vence en ${dias} días</span>`;
-      else licBadge = `<span class="badge badge-verde">Vigente</span>`;
+    if (op.licencia && op.licencia !== '' && op.licencia !== 'N/A') {
+      if (diasLic === null) licBadge = `<span class="badge badge-amarillo">Sin fecha lic.</span>`;
+      else if (diasLic < 0) licBadge = `<span class="badge badge-rojo">Lic. VENCIDA</span>`;
+      else if (diasLic <= 90) licBadge = `<span class="badge badge-amarillo">Lic. vence en ${diasLic} días</span>`;
+      else licBadge = `<span class="badge badge-verde">Lic. ${op.licencia} vigente</span>`;
+    }
+    let sagBadge = '';
+    if (op.carnet_sag === 'SI') {
+      if (diasSag === null) sagBadge = `<span class="badge badge-amarillo">SAG sin fecha</span>`;
+      else if (diasSag < 0) sagBadge = `<span class="badge badge-rojo">SAG VENCIDO</span>`;
+      else if (diasSag <= 90) sagBadge = `<span class="badge badge-amarillo">SAG vence en ${diasSag} días</span>`;
+      else sagBadge = `<span class="badge badge-verde">SAG vigente</span>`;
+    } else if (op.carnet_sag === 'NO') {
+      sagBadge = `<span class="badge badge-rojo">Sin Carnet SAG</span>`;
     }
     return `
       <div class="operador-ficha">
         <div class="op-avatar">${iniciales}</div>
         <div class="op-info">
           <div class="op-info-nombre">${op.nombre}</div>
-          <div class="op-info-datos">${op.tractor || '—'} · ${op.pulverizadora || '—'}</div>
-          <div class="op-info-licencia">${licBadge}</div>
+          <div class="op-info-datos" style="font-size:11px;color:var(--gris)">${op.rut || ''} · ${op.cargo || ''} · ${op.area || ''}</div>
+          <div class="op-info-licencia" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${licBadge} ${sagBadge}</div>
         </div>
       </div>
     `;
@@ -815,18 +840,24 @@ function renderContraloria() {
 
   // Alertas
   const alertas = operadoresDB.filter(op => {
-    if (!op.venc_licencia || !op.nombre) return false;
-    const dias = Math.round((new Date(op.venc_licencia) - new Date()) / 86400000);
-    return dias <= 30;
+    if (!op.nombre) return false;
+    const diasLic = op.venc_licencia ? Math.round((new Date(op.venc_licencia) - new Date()) / 86400000) : null;
+    const diasSag = op.venc_sag ? Math.round((new Date(op.venc_sag) - new Date()) / 86400000) : null;
+    return (diasLic !== null && diasLic <= 90) || (diasSag !== null && diasSag <= 90) || op.carnet_sag === 'NO';
   });
   document.getElementById('alertas-lista').innerHTML = alertas.length ? alertas.map(op => {
-    const dias = Math.round((new Date(op.venc_licencia) - new Date()) / 86400000);
+    const diasLic = op.venc_licencia ? Math.round((new Date(op.venc_licencia) - new Date()) / 86400000) : null;
+    const diasSag = op.venc_sag ? Math.round((new Date(op.venc_sag) - new Date()) / 86400000) : null;
+    const msgs = [];
+    if (op.carnet_sag === 'NO') msgs.push('❌ Sin Carnet SAG');
+    if (diasLic !== null && diasLic <= 90) msgs.push(diasLic < 0 ? '🚨 Licencia VENCIDA' : `⚠️ Licencia vence en ${diasLic} días`);
+    if (diasSag !== null && diasSag <= 90) msgs.push(diasSag < 0 ? '🚨 SAG VENCIDO' : `⚠️ SAG vence en ${diasSag} días`);
     return `
       <div class="alerta">
         <span>⚠️</span>
         <div>
           <div class="alerta-texto">${op.nombre}</div>
-          <div style="font-size:12px;color:var(--gris);margin-top:2px">${dias < 0 ? 'Licencia VENCIDA' : `Licencia vence en ${dias} días`} · ${op.tractor}</div>
+          <div style="font-size:12px;color:var(--gris);margin-top:2px">${msgs.join(' · ')}</div>
         </div>
       </div>
     `;
@@ -835,8 +866,10 @@ function renderContraloria() {
 
 function contarAlertasLicencias() {
   return operadoresDB.filter(op => {
-    if (!op.venc_licencia || !op.nombre) return false;
-    return Math.round((new Date(op.venc_licencia) - new Date()) / 86400000) <= 30;
+    if (!op.nombre) return false;
+    const diasLic = op.venc_licencia ? Math.round((new Date(op.venc_licencia) - new Date()) / 86400000) : null;
+    const diasSag = op.venc_sag ? Math.round((new Date(op.venc_sag) - new Date()) / 86400000) : null;
+    return (diasLic !== null && diasLic <= 90) || (diasSag !== null && diasSag <= 90) || op.carnet_sag === 'NO';
   }).length;
 }
 
