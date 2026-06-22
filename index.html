@@ -145,8 +145,8 @@
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2d5a27" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
       </div>
       <div>
-        <div class="btn-rol-titulo">Tractorista</div>
-        <div class="btn-rol-desc">Ver mi orden de aplicación del día</div>
+        <div class="btn-rol-titulo">Personal</div>
+        <div class="btn-rol-desc">Fichas del equipo de maquinaria</div>
       </div>
     </button>
     <button class="btn-rol" onclick="accederControlCalidad()">
@@ -165,8 +165,8 @@
 <div class="vista" id="v-operador-lista">
   <div class="operador-busca">
     <button class="back-btn" style="color:var(--gris);margin-bottom:12px" onclick="mostrarVista('v-inicio')">← Volver</button>
-    <h2>¿Quién eres?</h2>
-    <p style="font-size:13px;color:var(--gris);margin-bottom:16px">Selecciona tu nombre para ver tu orden del día</p>
+    <h2>Personal</h2>
+    <p style="font-size:13px;color:var(--gris);margin-bottom:16px">Selecciona un nombre para ver su ficha</p>
     <div class="lista-operadores" id="lista-operadores"></div>
   </div>
 </div>
@@ -187,7 +187,6 @@
   <div class="cont-tabs">
     <button class="back-btn" style="color:var(--gris);padding:12px 16px;font-size:13px" onclick="mostrarVista('v-inicio')">←</button>
     <div class="tab activo" onclick="cambiarTab('t-ordenes',this)">Órdenes</div>
-    <div class="tab" onclick="cambiarTab('t-operadores',this)">Operadores</div>
     <div class="tab" onclick="cambiarTab('t-alertas',this)">Alertas</div>
   </div>
   <div class="cont-body">
@@ -196,11 +195,6 @@
       <div class="stats-row" id="stats-row"></div>
       <div class="seccion-titulo">Órdenes del día</div>
       <div id="ordenes-lista"></div>
-    </div>
-    <!-- TAB OPERADORES -->
-    <div class="tab-content" id="t-operadores">
-      <div class="seccion-titulo">Fichas operadores</div>
-      <div id="operadores-lista"></div>
     </div>
     <!-- TAB ALERTAS -->
     <div class="tab-content" id="t-alertas">
@@ -247,31 +241,31 @@ function cerrarModal() {
 // ── DATOS DE EJEMPLO (se reemplazarán con datos reales de Supabase) ──
 const OPERADORES = [
   // TRACTORISTAS
-  { rut: "7307747-8",  nombre: "CALDERON HUENCHO HERNAN ENRIQUE",   cargo: "TRACTORISTA",          contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "NO",  venc_sag: null },
-  { rut: "9063916-1",  nombre: "FUENTES MATELUNA ANGEL PATRICIO",    cargo: "TRACTORISTA",          contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null },
-  { rut: "11359721-6", nombre: "ABARCA ARAYA MIGUEL",                cargo: "TRACTORISTA",          contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null },
-  { rut: "9094978-0",  nombre: "OYANEDEL JOSE DOMINGO",              cargo: "TRACTORISTA",          contrato: "PLAZO FIJO 2 MESES", area: "MAQUINARIA", licencia: "",      venc_licencia: null,         carnet_sag: "",    venc_sag: null },
+  { rut: "7307747-8",  nombre: "CALDERON HUENCHO HERNAN ENRIQUE",   cargo: "TRACTORISTA",          contrato: "INDEFINIDO",         area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "NO",  venc_sag: null,         telefono: "",             tractor: "",          pulverizadora: "" },
+  { rut: "9063916-1",  nombre: "FUENTES MATELUNA ANGEL PATRICIO",    cargo: "TRACTORISTA",          contrato: "INDEFINIDO",         area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null,         telefono: "",             tractor: "",          pulverizadora: "" },
+  { rut: "11359721-6", nombre: "ABARCA ARAYA MIGUEL",                cargo: "TRACTORISTA",          contrato: "INDEFINIDO",         area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null,         telefono: "",             tractor: "",          pulverizadora: "" },
+  { rut: "9094978-0",  nombre: "OYANEDEL JOSE DOMINGO",              cargo: "TRACTORISTA",          contrato: "PLAZO FIJO 2 MESES", area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null,         telefono: "",             tractor: "",          pulverizadora: "" },
   // APLICADORES
-  { rut: "10301378-k", nombre: "CATALAN CARREÑO MANUEL EULOGIO",     cargo: "APLICADOR",            contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null },
-  { rut: "12630318-1", nombre: "VALDES MARTINEZ ISIDRO NICOLAS",     cargo: "APLICADOR",            contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null },
-  { rut: "18774229-3", nombre: "MANCILLA MANCILLA AUDELINO ANTONIO", cargo: "APLICADOR",            contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null },
-  { rut: "10781871-5", nombre: "PLAZA PEREZ FELIPE ORLANDO",         cargo: "APLICADOR",            contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null },
-  { rut: "18214040-6", nombre: "RETAMALES DUARTE FERNANDO IVAN",     cargo: "APLICADOR",            contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "B-D",     venc_licencia: "2026-07-31", carnet_sag: "SI",  venc_sag: "2027-05-01" },
-  { rut: "9512251-5",  nombre: "RIVEROS ULLOA JUAN CARLOS",          cargo: "APLICADOR",            contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "B-C-D",   venc_licencia: "2032-08-12", carnet_sag: "SI",  venc_sag: "2028-03-01" },
-  { rut: "11391345-2", nombre: "SERRANO ARRAÑO CRISTIAN DEL CARMEN", cargo: "APLICADOR",            contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null },
-  { rut: "9336731-6",  nombre: "SUAREZ FABIA LUIS ERNESTO",          cargo: "APLICADOR",            contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "B-D",     venc_licencia: "2028-12-07", carnet_sag: "SI",  venc_sag: "2027-05-01" },
-  { rut: "13559047-9", nombre: "PALMA PATRICIO ALEJANDRO",           cargo: "APLICADOR",            contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "A2-A4-D", venc_licencia: "2027-12-12", carnet_sag: "SI",  venc_sag: "2030-06-01" },
+  { rut: "10301378-k", nombre: "CATALAN CARREÑO MANUEL EULOGIO",     cargo: "APLICADOR",            contrato: "INDEFINIDO",         area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null,         telefono: "56992623438",  tractor: "MF16",      pulverizadora: "CAFFINI" },
+  { rut: "12630318-1", nombre: "VALDES MARTINEZ ISIDRO NICOLAS",     cargo: "APLICADOR",            contrato: "INDEFINIDO",         area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null,         telefono: "",             tractor: "",          pulverizadora: "" },
+  { rut: "18774229-3", nombre: "MANCILLA MANCILLA AUDELINO ANTONIO", cargo: "APLICADOR",            contrato: "INDEFINIDO",         area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null,         telefono: "56985853806",  tractor: "K08",       pulverizadora: "CAFFINI" },
+  { rut: "10781871-5", nombre: "PLAZA PEREZ FELIPE ORLANDO",         cargo: "APLICADOR",            contrato: "INDEFINIDO",         area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null,         telefono: "56968087416",  tractor: "MF17",      pulverizadora: "CAFFINI" },
+  { rut: "18214040-6", nombre: "RETAMALES DUARTE FERNANDO IVAN",     cargo: "APLICADOR",            contrato: "INDEFINIDO",         area: "MAQUINARIA", licencia: "B-D",     venc_licencia: "2026-07-31", carnet_sag: "SI",  venc_sag: "2027-05-01", telefono: "56946646012",  tractor: "MF13",      pulverizadora: "CAFFINI" },
+  { rut: "9512251-5",  nombre: "RIVEROS ULLOA JUAN CARLOS",          cargo: "APLICADOR",            contrato: "INDEFINIDO",         area: "MAQUINARIA", licencia: "B-C-D",   venc_licencia: "2032-08-12", carnet_sag: "SI",  venc_sag: "2028-03-01", telefono: "56961176393",  tractor: "MF15",      pulverizadora: "CAFFINI" },
+  { rut: "11391345-2", nombre: "SERRANO ARRAÑO CRISTIAN DEL CARMEN", cargo: "APLICADOR",            contrato: "INDEFINIDO",         area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null,         telefono: "56958625946",  tractor: "MF10",      pulverizadora: "CAFFINI" },
+  { rut: "9336731-6",  nombre: "SUAREZ FABIA LUIS ERNESTO",          cargo: "APLICADOR",            contrato: "INDEFINIDO",         area: "MAQUINARIA", licencia: "B-D",     venc_licencia: "2028-12-07", carnet_sag: "SI",  venc_sag: "2027-05-01", telefono: "56997800166",  tractor: "MF18",      pulverizadora: "CAFFINI" },
+  { rut: "13559047-9", nombre: "PALMA PATRICIO ALEJANDRO",           cargo: "APLICADOR",            contrato: "INDEFINIDO",         area: "MAQUINARIA", licencia: "A2-A4-D", venc_licencia: "2027-12-12", carnet_sag: "SI",  venc_sag: "2030-06-01", telefono: "56989751378",  tractor: "MF12",      pulverizadora: "CAFFINI" },
   // APLICADORES HERBICIDA
-  { rut: "10301378-K", nombre: "CATALAN VALLADARES CARLOS MAURICIO", cargo: "APLICADOR HERBICIDA",  contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null },
-  { rut: "17786316-5", nombre: "ARRAÑO MEZA FELIPE IGNACIO",         cargo: "APLICADOR HERBICIDA",  contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "C",       venc_licencia: "2027-09-26", carnet_sag: "SI",  venc_sag: "2030-09-01" },
+  { rut: "10301378-K", nombre: "CATALAN VALLADARES CARLOS MAURICIO", cargo: "APLICADOR HERBICIDA",  contrato: "INDEFINIDO",         area: "MAQUINARIA", licencia: "",        venc_licencia: null,         carnet_sag: "",    venc_sag: null,         telefono: "56953377989",  tractor: "CUATRIMOTO", pulverizadora: "MOTO HERBICIDA" },
+  { rut: "17786316-5", nombre: "ARRAÑO MEZA FELIPE IGNACIO",         cargo: "APLICADOR HERBICIDA",  contrato: "INDEFINIDO",         area: "MAQUINARIA", licencia: "C",       venc_licencia: "2027-09-26", carnet_sag: "SI",  venc_sag: "2030-09-01", telefono: "56992521569",  tractor: "CUATRIMOTO", pulverizadora: "MOTO HERBICIDA" },
   // RIEGO
-  { rut: "21417558-4", nombre: "CARREÑO VERA FELIPE IGNACIO",        cargo: "AYUDANTE DOSIFICADOR", contrato: "INDEFINIDO",       area: "RIEGO",      licencia: "N/A",     venc_licencia: null,         carnet_sag: "SI",  venc_sag: "2031-05-01" },
-  { rut: "10711332-0", nombre: "JOSE OLIVARES",                      cargo: "AYUDANTE DOSIFICADOR", contrato: "INDEFINIDO",       area: "RIEGO",      licencia: "N/A",     venc_licencia: null,         carnet_sag: "",    venc_sag: null },
-  { rut: "15927371-7", nombre: "ARAOS SERGIO",                       cargo: "ENCARGADO CASETA",     contrato: "INDEFINIDO",       area: "RIEGO",      licencia: "N/A",     venc_licencia: null,         carnet_sag: "SI",  venc_sag: "2026-08-01" },
-  { rut: "26654119-8", nombre: "MAMONTEL KENOLD",                    cargo: "ENCARGADO CASETA",     contrato: "INDEFINIDO",       area: "RIEGO",      licencia: "N/A",     venc_licencia: null,         carnet_sag: "",    venc_sag: null },
+  { rut: "21417558-4", nombre: "CARREÑO VERA FELIPE IGNACIO",        cargo: "AYUDANTE DOSIFICADOR", contrato: "INDEFINIDO",         area: "RIEGO",      licencia: "N/A",     venc_licencia: null,         carnet_sag: "SI",  venc_sag: "2031-05-01", telefono: "",             tractor: "",          pulverizadora: "" },
+  { rut: "10711332-0", nombre: "JOSE OLIVARES",                      cargo: "AYUDANTE DOSIFICADOR", contrato: "INDEFINIDO",         area: "RIEGO",      licencia: "N/A",     venc_licencia: null,         carnet_sag: "",    venc_sag: null,         telefono: "",             tractor: "",          pulverizadora: "" },
+  { rut: "15927371-7", nombre: "ARAOS SERGIO",                       cargo: "ENCARGADO CASETA",     contrato: "INDEFINIDO",         area: "RIEGO",      licencia: "N/A",     venc_licencia: null,         carnet_sag: "SI",  venc_sag: "2026-08-01", telefono: "",             tractor: "",          pulverizadora: "" },
+  { rut: "26654119-8", nombre: "MAMONTEL KENOLD",                    cargo: "ENCARGADO CASETA",     contrato: "INDEFINIDO",         area: "RIEGO",      licencia: "N/A",     venc_licencia: null,         carnet_sag: "",    venc_sag: null,         telefono: "",             tractor: "",          pulverizadora: "" },
   // DOSIFICADORES
-  { rut: "21600718-4", nombre: "YAÑEZ VERA ALEXIS CRISTOBAL",        cargo: "DOSIFICADOR",          contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "N/A",     venc_licencia: null,         carnet_sag: "SI",  venc_sag: "2030-12-01" },
-  { rut: "20311567-9", nombre: "ESPINOZA ROJAS JOSE ANDRES",         cargo: "DOSIFICADOR",          contrato: "INDEFINIDO",       area: "MAQUINARIA", licencia: "N/A",     venc_licencia: null,         carnet_sag: "SI",  venc_sag: "2030-03-01" },
+  { rut: "21600718-4", nombre: "YAÑEZ VERA ALEXIS CRISTOBAL",        cargo: "DOSIFICADOR",          contrato: "INDEFINIDO",         area: "MAQUINARIA", licencia: "N/A",     venc_licencia: null,         carnet_sag: "SI",  venc_sag: "2030-12-01", telefono: "",             tractor: "",          pulverizadora: "" },
+  { rut: "20311567-9", nombre: "ESPINOZA ROJAS JOSE ANDRES",         cargo: "DOSIFICADOR",          contrato: "INDEFINIDO",         area: "MAQUINARIA", licencia: "N/A",     venc_licencia: null,         carnet_sag: "SI",  venc_sag: "2030-03-01", telefono: "",             tractor: "",          pulverizadora: "" },
 ];
 
 const ORDENES = [
@@ -366,11 +360,61 @@ function cambiarTab(tabId, el) {
 function renderListaOperadores() {
   const cont = document.getElementById('lista-operadores');
   cont.innerHTML = operadoresDB.filter(o => o.nombre).map(op => `
-    <div class="op-btn" onclick="modoContraloria=false; eppChecks={}; abrirOrdenOperador('${op.nombre}')">
+    <div class="op-btn" onclick="verFichaOperador('${op.nombre.replace(/'/g,"\\'")}')">
       <div class="op-nombre">${op.nombre}</div>
       <div class="op-tractor">${op.cargo || ''} · ${op.area || ''}</div>
     </div>
   `).join('');
+}
+
+function verFichaOperador(nombre) {
+  const op = operadoresDB.find(o => o.nombre === nombre);
+  if (!op) return;
+  const diasLic = op.venc_licencia ? Math.round((new Date(op.venc_licencia) - new Date()) / 86400000) : null;
+  const diasSag = op.venc_sag ? Math.round((new Date(op.venc_sag) - new Date()) / 86400000) : null;
+  const fmtFecha = f => f ? f.split('-').reverse().join('/') : '—';
+  const semaforo = (dias) => {
+    if (dias === null) return '#999';
+    if (dias < 0) return 'var(--rojo)';
+    if (dias <= 90) return '#E67E22';
+    return 'var(--verde)';
+  };
+  const licColor = semaforo(diasLic);
+  const sagColor = semaforo(diasSag);
+  const iniciales = op.nombre.split(' ').slice(0,2).map(p=>p[0]).join('');
+  document.getElementById('ficha-avatar').textContent = iniciales;
+  document.getElementById('ficha-nombre').textContent = op.nombre;
+  document.getElementById('ficha-cargo').textContent = `${op.cargo || '—'} · ${op.area || '—'}`;
+  document.getElementById('ficha-rut').textContent = op.rut || '—';
+  document.getElementById('ficha-contrato').textContent = op.contrato || '—';
+  // Teléfono
+  const telEl = document.getElementById('ficha-telefono');
+  const telRow = document.getElementById('ficha-tel-row');
+  if (op.telefono) { telEl.innerHTML = `<a href="tel:+${op.telefono}" style="color:var(--verde);text-decoration:none">+${op.telefono}</a>`; telRow.style.display='flex'; }
+  else telRow.style.display='none';
+  // Tractor
+  const tracRow = document.getElementById('ficha-tractor-row');
+  if (op.tractor) { document.getElementById('ficha-tractor').textContent = op.tractor; tracRow.style.display='flex'; }
+  else tracRow.style.display='none';
+  // Pulverizadora
+  const pulvRow = document.getElementById('ficha-pulv-row');
+  if (op.pulverizadora) { document.getElementById('ficha-pulverizadora').textContent = op.pulverizadora; pulvRow.style.display='flex'; }
+  else pulvRow.style.display='none';
+  // Licencia
+  document.getElementById('ficha-licencia').innerHTML = op.licencia && op.licencia !== '' && op.licencia !== 'N/A'
+    ? `<span style="font-weight:600">${op.licencia}</span> — vence <span style="color:${licColor};font-weight:600">${fmtFecha(op.venc_licencia)}</span>${diasLic !== null ? ` (${diasLic < 0 ? 'VENCIDA' : diasLic + ' días'})` : ''}`
+    : '<span style="color:#999">Sin licencia registrada</span>';
+  // SAG
+  document.getElementById('ficha-sag').innerHTML = op.carnet_sag === 'SI'
+    ? `<span style="color:var(--verde);font-weight:600">✓ Tiene Carnet SAG</span> — vence <span style="color:${sagColor};font-weight:600">${fmtFecha(op.venc_sag)}</span>${diasSag !== null ? ` (${diasSag < 0 ? 'VENCIDO' : diasSag + ' días'})` : ''}`
+    : op.carnet_sag === 'NO'
+      ? '<span style="color:var(--rojo);font-weight:600">✗ Sin Carnet SAG</span>'
+      : '<span style="color:#999">—</span>';
+  document.getElementById('modal-ficha-operador').style.display = 'flex';
+}
+
+function cerrarFichaOperador() {
+  document.getElementById('modal-ficha-operador').style.display = 'none';
 }
 
 // ── ORDEN OPERADOR ──
@@ -879,7 +923,57 @@ window.addEventListener('DOMContentLoaded', () => {
   setTimeout(() => document.getElementById('input-clave-inicio').focus(), 200);
 });
 </script>
+<!-- MODAL FICHA OPERADOR -->
+<div id="modal-ficha-operador" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:1000;align-items:flex-end;justify-content:center;padding:0">
+  <div style="background:white;border-radius:20px 20px 0 0;padding:28px 24px 36px;width:100%;max-width:480px;box-shadow:0 -8px 40px rgba(0,0,0,0.2);max-height:90vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <div style="font-size:16px;font-weight:700;color:var(--texto)">Ficha del Operador</div>
+      <button onclick="cerrarFichaOperador()" style="background:none;border:none;font-size:22px;color:var(--gris);cursor:pointer;line-height:1">×</button>
+    </div>
+    <!-- Avatar + nombre -->
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px">
+      <div style="width:56px;height:56px;border-radius:50%;background:var(--verde-bg);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:var(--verde);flex-shrink:0" id="ficha-avatar">??</div>
+      <div>
+        <div style="font-size:15px;font-weight:700;color:var(--texto)" id="ficha-nombre">—</div>
+        <div style="font-size:12px;color:var(--gris);margin-top:2px" id="ficha-cargo">—</div>
+      </div>
+    </div>
+    <!-- Datos -->
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;padding:10px 14px;background:#f8f8f8;border-radius:10px">
+        <span style="font-size:12px;color:var(--gris);font-weight:500">RUT</span>
+        <span style="font-size:13px;font-weight:600;color:var(--texto)" id="ficha-rut">—</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:10px 14px;background:#f8f8f8;border-radius:10px">
+        <span style="font-size:12px;color:var(--gris);font-weight:500">Contrato</span>
+        <span style="font-size:13px;font-weight:600;color:var(--texto)" id="ficha-contrato">—</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:10px 14px;background:#f8f8f8;border-radius:10px" id="ficha-tel-row">
+        <span style="font-size:12px;color:var(--gris);font-weight:500">📱 Teléfono</span>
+        <span style="font-size:13px;font-weight:600;color:var(--texto)" id="ficha-telefono">—</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:10px 14px;background:#f8f8f8;border-radius:10px" id="ficha-tractor-row">
+        <span style="font-size:12px;color:var(--gris);font-weight:500">🚜 Tractor</span>
+        <span style="font-size:13px;font-weight:600;color:var(--texto)" id="ficha-tractor">—</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:10px 14px;background:#f8f8f8;border-radius:10px" id="ficha-pulv-row">
+        <span style="font-size:12px;color:var(--gris);font-weight:500">💧 Pulverizadora</span>
+        <span style="font-size:13px;font-weight:600;color:var(--texto)" id="ficha-pulverizadora">—</span>
+      </div>
+      <div style="padding:10px 14px;background:#f8f8f8;border-radius:10px">
+        <div style="font-size:12px;color:var(--gris);font-weight:500;margin-bottom:4px">🚗 Licencia de conducir</div>
+        <div style="font-size:13px;color:var(--texto)" id="ficha-licencia">—</div>
+      </div>
+      <div style="padding:10px 14px;background:#f8f8f8;border-radius:10px">
+        <div style="font-size:12px;color:var(--gris);font-weight:500;margin-bottom:4px">🌿 Carnet SAG</div>
+        <div style="font-size:13px;color:var(--texto)" id="ficha-sag">—</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL CLAVE INICIO -->
+
 <div id="modal-clave-inicio" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;padding:20px">
   <div style="background:white;border-radius:16px;padding:28px;width:100%;max-width:340px;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
     <div style="text-align:center;margin-bottom:24px">
