@@ -213,11 +213,19 @@
 <script>
 // ── ACCESO CONTROL DE CALIDAD ──
 function accederControlCalidad() {
-  const modal = document.getElementById('modal-clave');
-  modal.style.display = 'flex';
-  document.getElementById('input-clave').value = '';
-  document.getElementById('clave-error').style.display = 'none';
-  setTimeout(() => document.getElementById('input-clave').focus(), 100);
+  mostrarVista('v-contraloria');
+}
+
+function verificarClaveInicio() {
+  const clave = document.getElementById('input-clave-inicio').value;
+  if (clave === 'aadv2026') {
+    document.getElementById('modal-clave-inicio').style.display = 'none';
+    mostrarVista('v-inicio');
+  } else {
+    document.getElementById('clave-error-inicio').style.display = 'block';
+    document.getElementById('input-clave-inicio').value = '';
+    document.getElementById('input-clave-inicio').focus();
+  }
 }
 
 function verificarClave() {
@@ -831,8 +839,33 @@ function contarAlertasLicencias() {
     return Math.round((new Date(op.venc_licencia) - new Date()) / 86400000) <= 30;
   }).length;
 }
+
+// Mostrar clave al cargar
+window.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('modal-clave-inicio').style.display = 'flex';
+  setTimeout(() => document.getElementById('input-clave-inicio').focus(), 200);
+});
 </script>
-<!-- MODAL CLAVE -->
+<!-- MODAL CLAVE INICIO -->
+<div id="modal-clave-inicio" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;padding:20px">
+  <div style="background:white;border-radius:16px;padding:28px;width:100%;max-width:340px;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="font-size:40px;margin-bottom:10px">🌿</div>
+      <div style="font-size:18px;font-weight:700;color:var(--texto)">Control Aplicaciones</div>
+      <div style="font-size:13px;color:var(--gris);margin-top:4px">Agrícola Agua del Valle · 2026</div>
+    </div>
+    <input id="input-clave-inicio" type="password" placeholder="Clave de acceso"
+      style="width:100%;padding:14px;border:2px solid var(--borde);border-radius:10px;font-size:16px;outline:none;text-align:center;letter-spacing:4px;margin-bottom:8px"
+      onkeydown="if(event.key==='Enter') verificarClaveInicio()"
+      onfocus="this.style.borderColor='var(--verde)'"
+      onblur="this.style.borderColor='var(--borde)'"/>
+    <div id="clave-error-inicio" style="display:none;color:var(--rojo);font-size:12px;text-align:center;margin-bottom:8px">Clave incorrecta. Intenta nuevamente.</div>
+    <button onclick="verificarClaveInicio()" style="width:100%;padding:14px;background:var(--verde);color:white;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer">Ingresar</button>
+  </div>
+</div>
+
+<!-- MODAL CLAVE CC (legacy, no se usa) -->
+
 <div id="modal-clave" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:999;align-items:center;justify-content:center;padding:20px">
   <div style="background:white;border-radius:16px;padding:28px;width:100%;max-width:340px;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
     <div style="text-align:center;margin-bottom:20px">
