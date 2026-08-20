@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#1a2e1a">
 <title>Control Aplicaciones — AADV</title>
 <link rel="manifest" href="manifest.json">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root {
     --verde: #2d5a27;
@@ -193,6 +194,15 @@
     <!-- TAB ÓRDENES -->
     <div class="tab-content activo" id="t-ordenes">
       <div class="stats-row" id="stats-row"></div>
+
+      <button onclick="document.getElementById('oaFileInput').click()"
+        style="width:100%;padding:12px;border:1.5px dashed var(--verde-claro);border-radius:10px;background:var(--verde-bg);color:var(--verde);cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:6px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Cargar programa de Agroinventario (.xlsx)
+      </button>
+      <input type="file" id="oaFileInput" accept=".xlsx,.xls" style="display:none" onchange="cargarExcelOA(event)">
+      <div id="oaUploadStatus" style="font-size:11px;color:var(--gris);text-align:center;margin-bottom:14px"></div>
+
       <div class="seccion-titulo">Órdenes del día</div>
       <div id="ordenes-lista"></div>
     </div>
@@ -309,7 +319,10 @@ const EPP_ICONOS = {
 
 // ── SUPABASE CONFIG ──
 const SB_URL = "https://qmxcjbyqeazaeionpfli.supabase.co";
-const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFteGNqYnlxZWF6YWVpb25wZmxpIiwicm9sZSI6ImFub24iLCJpYXQiOjE2OTY5NTQzNzEsImV4cCI6MjAxMjUzMDM3MX0.ALkKYQAt741zfNYnc447idKv-WNqbM-BUvLTw";
+// La clave anterior estaba corrupta (firma incompleta, nunca autenticaba — por
+// eso siempre caía a los datos de ejemplo). Esta es la misma anon key pública
+// que ya usan las otras apps de AADV sobre este mismo proyecto Supabase.
+const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFteGNqYnlxZWF6YWVpb25wZmxpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjM4MTIsImV4cCI6MjA5NTg5OTgxMn0.amhvn_ALkKYQAt741zfNYnc447idKv-WNqbM-BUvLTw";
 
 let operadoresDB = OPERADORES;
 let ordenesDB = ORDENES;
@@ -340,6 +353,170 @@ async function cargarDesdeSupabase() {
     renderListaOperadores();
     renderContraloria();
   } catch(e) { console.log("Usando datos de ejemplo:", e.message); }
+}
+
+// ── CARGA DEL PROGRAMA DE AGROINVENTARIO (genera ORDENES_APLICACION) ──
+
+function normalizarNombre(s) {
+  return (s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+}
+
+// Busca en el roster de operadores un nombre cuyas palabras contengan todas
+// las palabras del nombre corto de Agroinventario (sin importar el orden).
+// Ej: "IVAN RETAMALES" calza con "RETAMALES DUARTE FERNANDO IVAN".
+function buscarOperadorRoster(nombreCorto) {
+  const palabras = normalizarNombre(nombreCorto).split(/\s+/).filter(p => p.length > 1);
+  if (!palabras.length) return null;
+  return operadoresDB.find(op => {
+    if (!op.nombre) return false;
+    const nombreNorm = normalizarNombre(op.nombre);
+    return palabras.every(p => nombreNorm.split(/\s+/).includes(p));
+  }) || null;
+}
+
+// Los números vienen del Excel como float (13.0, 240.0); esto les quita los
+// decimales sobrantes para que se vean como "13°C" y no "13.00°C".
+function fmtNum(v) {
+  if (v === null || v === undefined || v === '') return null;
+  var n = Number(v);
+  if (isNaN(n)) return v;
+  return (Math.round(n * 100) / 100).toString();
+}
+
+function fmtCondicion(valor, sufijo) {
+  var n = fmtNum(valor);
+  return (n === null) ? '' : (n + sufijo);
+}
+
+async function cargarExcelOA(evt) {
+  const file = evt.target.files[0];
+  evt.target.value = '';
+  if (!file) return;
+  const statusEl = document.getElementById('oaUploadStatus');
+  statusEl.style.color = 'var(--gris)';
+  statusEl.textContent = 'Leyendo archivo…';
+
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const wsOA = wb.Sheets['Órdenes de Aplicación'];
+    const wsDet = wb.Sheets['Detalle Órdenes de Aplicación'];
+    if (!wsOA || !wsDet) {
+      statusEl.style.color = 'var(--rojo)';
+      statusEl.textContent = 'El archivo no tiene las hojas esperadas ("Órdenes de Aplicación" y "Detalle Órdenes de Aplicación").';
+      return;
+    }
+    const filasOA = XLSX.utils.sheet_to_json(wsOA, { defval: null });
+    const filasDet = XLSX.utils.sheet_to_json(wsDet, { defval: null });
+
+    const ordenesPorNumero = {};
+    filasOA.forEach(r => {
+      const num = r['NÚMERO OA'];
+      if (num) ordenesPorNumero[String(num)] = r;
+    });
+
+    // Agrupar detalle por (numero_oa, operador individual) — un mismo cuartel
+    // puede listar varios aplicadores trabajando juntos; cada uno debe poder
+    // encontrar "su" orden al buscar su nombre en la app.
+    const grupos = {}; // key: numero_oa + '||' + operador → { numero_oa, operador, lineas: [...] }
+    filasDet.forEach(r => {
+      const numOA = r['CÓDIGO OA'] ? String(r['CÓDIGO OA']) : null;
+      if (!numOA) return;
+      const aplicadoresRaw = r['APLICADOR(ES)'] || (ordenesPorNumero[numOA] && ordenesPorNumero[numOA]['APLICADOR(ES)']) || '';
+      const nombres = aplicadoresRaw.split(',').map(n => n.trim()).filter(Boolean);
+      if (!nombres.length) nombres.push('Sin asignar');
+      nombres.forEach(nombre => {
+        const key = numOA + '||' + nombre;
+        if (!grupos[key]) grupos[key] = { numero_oa: numOA, operador: nombre, lineas: [] };
+        grupos[key].lineas.push(r);
+      });
+    });
+
+    const filas = Object.values(grupos).map(g => {
+      const orden = ordenesPorNumero[g.numero_oa] || {};
+      const rosterOp = buscarOperadorRoster(g.operador);
+      const operadorNombre = rosterOp ? rosterOp.nombre : g.operador;
+
+      const sectores = [...new Set(g.lineas.map(l => (l['CUARTEL O CENTRO DE COSTO'] || '').trim()).filter(Boolean))].join(', ');
+      const especie = g.lineas[0]['ESPECIE'] || '';
+      const variedad = [...new Set(g.lineas.map(l => l['VARIEDAD']).filter(Boolean))].join(', ');
+      const mojamiento = g.lineas.map(l => l['MOJAMIENTO (L/HA)']).find(v => v !== null && v !== undefined) || null;
+
+      const productosVistos = new Set();
+      const productos = [];
+      g.lineas.forEach(l => {
+        const nombre = l['NOMBRE COMERCIAL'];
+        if (!nombre || productosVistos.has(nombre)) return;
+        productosVistos.add(nombre);
+        productos.push({
+          nombre: nombre,
+          ing_activo: l['INGREDIENTE(S) ACTIVO(S)'] || '',
+          objetivo: '',
+          dosis_100l: fmtCondicion(l['DOSIS / 100L'], l['UNIDAD DE MEDIDA'] || ''),
+          dosis_ha: '',
+          carencia: l['CARENCIA ETIQUETA (DÍAS)'] != null ? (fmtNum(l['CARENCIA ETIQUETA (DÍAS)']) + ' día' + (Number(l['CARENCIA ETIQUETA (DÍAS)']) === 1 ? '' : 's')) : '—',
+          reingreso: l['HORAS REINGRESO'] != null && l['HORAS REINGRESO'] !== 'N/A' ? (fmtNum(l['HORAS REINGRESO']) + ' hr') : '—',
+        });
+      });
+
+      return {
+        nro_orden: g.numero_oa,
+        fecha_aplicacion: orden['FECHA INGRESO'] || null,
+        hora_inicio_plan: orden['HORA INICIO'] || null,
+        hora_termino_plan: orden['HORA FIN'] || null,
+        especie: especie,
+        variedad: variedad,
+        estado_fenologico: orden['ESTADO FENOLÓGICO'] || '',
+        sectores: sectores,
+        hectareas: null,
+        mojamiento: mojamiento != null ? Number(mojamiento) : null,
+        maquina: rosterOp ? (rosterOp.tractor || null) : null,
+        pulverizadora: rosterOp ? (rosterOp.pulverizadora || null) : null,
+        operador_nombre: operadorNombre,
+        tecnico: orden['USUARIO'] || '',
+        temperatura: fmtCondicion(orden['TEMPERATURA (°C)'], '°C'),
+        viento: fmtCondicion(orden['VIENTO (Km/h)'], ' km/hr'),
+        humedad: fmtCondicion(orden['HUMEDAD (% HR)'], '%HR'),
+        productos: productos,
+        epp: ["Antiparras", "Protección nariz y boca", "Delantal protector", "Protección facial", "Respirador", "Botas", "Guantes", "Ropa protectora"],
+        observaciones: orden['OBSERVACIONES'] || '',
+        estado_oa: orden['ESTADO'] || '',
+      };
+    }).filter(f => f.nro_orden && f.fecha_aplicacion);
+
+    if (!filas.length) {
+      statusEl.style.color = 'var(--rojo)';
+      statusEl.textContent = 'No se encontraron filas válidas para cargar.';
+      return;
+    }
+
+    statusEl.textContent = 'Guardando ' + filas.length + ' órdenes…';
+    const resp = await fetch(`${SB_URL}/rest/v1/ordenes_aplicacion?on_conflict=nro_orden,operador_nombre`, {
+      method: 'POST',
+      headers: {
+        'apikey': SB_KEY,
+        'Authorization': `Bearer ${SB_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify(filas)
+    });
+
+    if (!resp.ok) {
+      const texto = await resp.text();
+      statusEl.style.color = 'var(--rojo)';
+      statusEl.textContent = 'Error guardando en Supabase: ' + resp.status + ' ' + texto.slice(0, 200);
+      return;
+    }
+
+    statusEl.style.color = 'var(--verde)';
+    const numOrdenesUnicas = new Set(filas.map(f => f.nro_orden)).size;
+    statusEl.textContent = numOrdenesUnicas + ' órdenes de Agroinventario → ' + filas.length + ' asignaciones por operador cargadas.';
+    await cargarDesdeSupabase();
+  } catch (e) {
+    statusEl.style.color = 'var(--rojo)';
+    statusEl.textContent = 'No se pudo leer el archivo: ' + e.message;
+  }
 }
 
 function mostrarVista(id) {
@@ -849,8 +1026,10 @@ function renderContraloria() {
     </div>
   `).join('') || '<div style="color:var(--gris);font-size:13px;padding:20px;text-align:center">Sin órdenes para hoy</div>';
 
-  // Lista operadores
-  document.getElementById('operadores-lista').innerHTML = operadoresDB.filter(o => o.nombre).map(op => {
+  // Lista operadores (el tab/elemento aún no existe en esta versión de la
+  // vista Contraloría; se deja protegido para no romper el resto del render).
+  const elOperadoresLista = document.getElementById('operadores-lista');
+  if (elOperadoresLista) elOperadoresLista.innerHTML = operadoresDB.filter(o => o.nombre).map(op => {
     const diasLic = op.venc_licencia ? Math.round((new Date(op.venc_licencia) - new Date()) / 86400000) : null;
     const diasSag = op.venc_sag ? Math.round((new Date(op.venc_sag) - new Date()) / 86400000) : null;
     const iniciales = op.nombre.split(' ').slice(0,2).map(p=>p[0]).join('');
