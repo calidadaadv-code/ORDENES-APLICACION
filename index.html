@@ -269,6 +269,15 @@
         <div class="btn-rol-desc">Controles de calidad guardados por orden</div>
       </div>
     </button>
+    <button class="btn-rol" onclick="abrirFenologia()">
+      <div class="btn-rol-icon amarillo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#c8860a" stroke-width="2"><path d="M12 2C8 6 6 10 6 13a6 6 0 0 0 12 0c0-3-2-7-6-11z"/><path d="M12 13V22"/></svg>
+      </div>
+      <div>
+        <div class="btn-rol-titulo">Estados Fenológicos</div>
+        <div class="btn-rol-desc">Qué cuartel falta por aplicar y qué producto</div>
+      </div>
+    </button>
   </div>
 </div>
 
@@ -303,6 +312,47 @@
     <div class="orden-sub" id="informe-sectores">—</div>
   </div>
   <div class="orden-body" id="informe-oa-body"></div>
+</div>
+
+<!-- VISTA: ESTADOS FENOLÓGICOS -->
+<div class="vista" id="v-fenologia">
+  <div class="operador-busca">
+    <button class="back-btn" style="color:var(--gris);margin-bottom:12px" onclick="mostrarVista('v-inicio')">← Volver</button>
+    <h2>Estados Fenológicos</h2>
+    <p style="font-size:13px;color:var(--gris);margin-bottom:16px">Qué cuartel falta por aplicar, y qué producto</p>
+
+    <button onclick="document.getElementById('fenoFileInput').click()"
+      style="width:100%;padding:12px;border:1.5px dashed var(--verde-claro);border-radius:10px;background:var(--verde-bg);color:var(--verde);cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:6px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Cargar estados fenológicos (.xlsx)
+    </button>
+    <input type="file" id="fenoFileInput" accept=".xlsx,.xls" style="display:none" onchange="cargarExcelFenologia(event)">
+    <div id="fenoUploadStatus" style="font-size:11px;color:var(--gris);text-align:center;margin-bottom:14px"></div>
+
+    <div class="seccion-titulo">Por especie</div>
+    <div id="fenoStatus" style="font-size:12px;color:var(--gris);text-align:center;margin-bottom:8px"></div>
+    <div id="feno-especies-lista"></div>
+  </div>
+</div>
+
+<!-- VISTA: FENOLOGÍA · CUARTELES DE UNA ESPECIE -->
+<div class="vista" id="v-fenologia-cuarteles">
+  <div class="operador-busca">
+    <button class="back-btn" style="color:var(--gris);margin-bottom:12px" onclick="mostrarVista('v-fenologia')">← Volver</button>
+    <h2 id="feno-cuarteles-titulo">—</h2>
+    <p style="font-size:13px;color:var(--gris);margin-bottom:16px">Cuarteles con más pendientes primero</p>
+    <div id="feno-cuarteles-lista"></div>
+  </div>
+</div>
+
+<!-- VISTA: FENOLOGÍA · DETALLE DE UN CUARTEL -->
+<div class="vista" id="v-fenologia-detalle">
+  <div class="orden-header">
+    <button class="back-btn" onclick="mostrarVista('v-fenologia-cuarteles')">← Volver</button>
+    <div class="orden-nro" id="feno-detalle-titulo">—</div>
+    <div class="orden-sub" id="feno-detalle-sub">—</div>
+  </div>
+  <div class="orden-body" id="feno-detalle-lista"></div>
 </div>
 
 <!-- VISTA: CONTRALORÍA -->
@@ -356,6 +406,12 @@ function abrirInformes() {
   mostrarVista('v-contraloria');
   cambiarTab('t-listas', document.getElementById('tab-btn-listas'));
   cargarControlesGuardados();
+}
+
+// Entra a "Estados Fenológicos" desde la tarjeta del menú principal.
+function abrirFenologia() {
+  mostrarVista('v-fenologia');
+  cargarFenologicos();
 }
 
 function verificarClaveInicio() {
@@ -483,6 +539,13 @@ let ordenesCompletadasSet = new Set();
 // revisión, sin afectar a otros operadores que compartan la misma orden y
 // todavía no hayan revisado la suya.
 let controlesGuardadosSet = new Set();
+
+// Datos cargados desde la hoja "% E. FENOLÓGICOS" (una fila por
+// cuartel×producto, con su fecha programada y si ya se aplicó o no).
+// Se cargan bajo demanda al entrar a "Estados Fenológicos", igual que los
+// controles guardados de "Órdenes listas".
+let fenologicosDB = [];
+let especieFenoActual = null;
 
 // ── INICIALIZACIÓN ──
 document.addEventListener('DOMContentLoaded', () => {
@@ -808,6 +871,244 @@ function construirFilasCuadernoCampo(ws) {
     }).filter(f => f.nro_orden && f.fecha_aplicacion);
 
     return filas;
+}
+
+// ── ESTADOS FENOLÓGICOS (hoja "% E. FENOLÓGICOS") ──
+// Este archivo es un programa de aplicaciones por estado fenológico,
+// totalmente aparte del programa de Agroinventario: no trae número de OA
+// ni operadores, solo dice — por cuartel — qué productos ya se aplicaron
+// (✓) y cuáles siguen pendientes (✗), con su fecha objetivo si la tiene.
+
+// Construye, para cada bloque de especie, una fila por cuartel×producto.
+// La hoja trae 4 tablas apiladas (Cerezos, Nectarines, Ciruelos, Duraznos)
+// con la misma estructura (título → fila TEMPORADA → encabezado → filas de
+// datos), pero cada una con su propia lista de productos, y con CUARTEL y
+// VARIEDAD en orden invertido en Cerezo respecto a las otras tres. CAMPO,
+// SEMANA, ESPECIE y VARIEDAD vienen en celdas combinadas (solo se llenan en
+// la primera fila de cada grupo), así que hay que arrastrar hacia abajo el
+// último valor visto.
+function construirFilasEstadosFenologicos(ws) {
+  const filas = [];
+  // header:1 → filas como arreglos alineados a columnas (no por nombre,
+  // porque hay encabezados repetidos/vacíos). raw:false + dateNF fuerza que
+  // las fechas salgan como texto "yyyy-mm-dd" en vez de números de serie.
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false, dateNF: 'yyyy-mm-dd' });
+
+  for (let i = 0; i < rows.length; i++) {
+    const celda0 = rows[i] && rows[i][0];
+    if (typeof celda0 !== 'string' || celda0.trim().toUpperCase().indexOf('% ESTADOS FENOL') !== 0) continue;
+
+    // Título tipo "% ESTADOS FENOLÓGICOS - CEREZOS - AADV 2026".
+    const especieTitulo = (celda0.split('-')[1] || '').trim();
+    const esCerezo = especieTitulo.toUpperCase().indexOf('CEREZO') !== -1;
+    const colCuartel = esCerezo ? 4 : 3;
+    const colVariedad = esCerezo ? 3 : 4;
+
+    // título(+0) → fila vacía(+1) → TEMPORADA(+2) → fila vacía(+3) → encabezado(+4)
+    const headerRowIdx = i + 4;
+    const header = rows[headerRowIdx];
+    if (!header) continue;
+
+    // Pares (nombre de producto, columna booleana) desde la columna I
+    // (índice 7 relativo a B) en adelante, saltando la columna H vacía.
+    const productos = [];
+    for (let c = 7; c < header.length; c += 2) {
+      if (header[c]) productos.push({ nombre: String(header[c]).replace(/\s+/g, ' ').trim(), col: c });
+    }
+    if (!productos.length) continue;
+
+    let ultimoCampo = null, ultimaSemana = null, ultimaEspecie = null, ultimaVariedad = null;
+    for (let d = headerRowIdx + 1; d < rows.length; d++) {
+      const fila = rows[d];
+      if (!fila) continue;
+      const primerCelda = fila[0];
+      if (typeof primerCelda === 'string' && primerCelda.trim().toUpperCase().indexOf('% ESTADOS FENOL') === 0) break;
+
+      const cuartel = fila[colCuartel];
+      if (fila[0]) ultimoCampo = fila[0];
+      if (fila[1] != null && fila[1] !== '') ultimaSemana = fila[1];
+      if (fila[2]) ultimaEspecie = fila[2];
+      if (fila[colVariedad]) ultimaVariedad = fila[colVariedad];
+      if (!cuartel) continue; // fila de separación entre tablas, sin datos
+
+      productos.forEach(p => {
+        const valorFecha = fila[p.col];
+        const valorBool = fila[p.col + 1];
+        const aplicado = valorBool === true || valorBool === 'TRUE' || valorBool === 'true' || valorBool === 1 || valorBool === '1';
+        filas.push({
+          especie: ultimaEspecie || especieTitulo,
+          campo: ultimoCampo || null,
+          semana: ultimaSemana != null ? String(ultimaSemana) : null,
+          variedad: ultimaVariedad || null,
+          cuartel: String(cuartel).trim(),
+          estado_fenologico: fila[5] || null,
+          producto: p.nombre,
+          fecha_programada: valorFecha || null,
+          aplicado: !!aplicado,
+        });
+      });
+    }
+  }
+  return filas;
+}
+
+async function cargarExcelFenologia(evt) {
+  const file = evt.target.files[0];
+  evt.target.value = '';
+  if (!file) return;
+  const statusEl = document.getElementById('fenoUploadStatus');
+  statusEl.style.color = 'var(--gris)';
+  statusEl.textContent = 'Leyendo archivo…';
+
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const nombreHoja = Object.keys(wb.Sheets).find(n => {
+      const norm = n.replace(/\s+/g, ' ').trim().toUpperCase();
+      return norm.indexOf('E. FENOL') !== -1 || norm.indexOf('ESTADOS FENOL') !== -1;
+    });
+    if (!nombreHoja) {
+      statusEl.style.color = 'var(--rojo)';
+      statusEl.textContent = 'El archivo no tiene una hoja de estados fenológicos ("% E. FENOLÓGICOS").';
+      return;
+    }
+
+    const filas = construirFilasEstadosFenologicos(wb.Sheets[nombreHoja]);
+    if (!filas.length) {
+      statusEl.style.color = 'var(--rojo)';
+      statusEl.textContent = 'No se encontraron filas válidas para cargar.';
+      return;
+    }
+
+    statusEl.textContent = 'Guardando ' + filas.length + ' registros…';
+    const resp = await fetch(`${SB_URL}/rest/v1/estados_fenologicos?on_conflict=especie,cuartel,producto`, {
+      method: 'POST',
+      headers: {
+        'apikey': SB_KEY,
+        'Authorization': `Bearer ${SB_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify(filas)
+    });
+
+    if (!resp.ok) {
+      const texto = await resp.text();
+      statusEl.style.color = 'var(--rojo)';
+      statusEl.textContent = 'Error guardando en Supabase: ' + resp.status + ' ' + texto.slice(0, 200);
+      return;
+    }
+
+    statusEl.style.color = 'var(--verde)';
+    const cuartelesUnicos = new Set(filas.map(f => f.cuartel)).size;
+    statusEl.textContent = cuartelesUnicos + ' cuarteles (' + filas.length + ' productos) actualizados.';
+    await cargarFenologicos();
+  } catch (e) {
+    statusEl.style.color = 'var(--rojo)';
+    statusEl.textContent = 'No se pudo leer el archivo: ' + e.message;
+  }
+}
+
+async function cargarFenologicos() {
+  const statusEl = document.getElementById('fenoStatus');
+  statusEl.style.color = 'var(--gris)';
+  statusEl.textContent = 'Cargando…';
+  try {
+    const resp = await fetch(`${SB_URL}/rest/v1/estados_fenologicos?select=*&order=cuartel.asc`, {
+      headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
+    });
+    const data = await resp.json();
+    fenologicosDB = Array.isArray(data) ? data : [];
+    renderFenologiaEspecies();
+  } catch (e) {
+    statusEl.style.color = 'var(--rojo)';
+    statusEl.textContent = 'No se pudo cargar: ' + e.message;
+  }
+}
+
+function renderFenologiaEspecies() {
+  const statusEl = document.getElementById('fenoStatus');
+  const cont = document.getElementById('feno-especies-lista');
+  if (!fenologicosDB.length) {
+    statusEl.style.color = 'var(--gris)';
+    statusEl.textContent = 'Todavía no se ha cargado el archivo de estados fenológicos.';
+    cont.innerHTML = '';
+    return;
+  }
+  statusEl.textContent = '';
+  const especies = [...new Set(fenologicosDB.map(f => f.especie).filter(Boolean))].sort();
+  cont.innerHTML = especies.map(esp => {
+    const items = fenologicosDB.filter(f => f.especie === esp);
+    const cuartelesUnicos = new Set(items.map(f => f.cuartel));
+    const cuartelesPendientes = new Set(items.filter(f => !f.aplicado).map(f => f.cuartel));
+    return `
+      <div class="op-btn" onclick="abrirFenologiaCuarteles('${esp.replace(/'/g, "\\'")}')">
+        <div class="op-nombre">${esp}</div>
+        <div class="op-tractor">${cuartelesUnicos.size} cuartel${cuartelesUnicos.size === 1 ? '' : 'es'} · ${cuartelesPendientes.size} con aplicaciones pendientes</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function abrirFenologiaCuarteles(especie) {
+  especieFenoActual = especie;
+  document.getElementById('feno-cuarteles-titulo').textContent = especie;
+  mostrarVista('v-fenologia-cuarteles');
+  renderFenologiaCuarteles();
+}
+
+function renderFenologiaCuarteles() {
+  const cont = document.getElementById('feno-cuarteles-lista');
+  const items = fenologicosDB.filter(f => f.especie === especieFenoActual);
+  const porCuartel = {};
+  items.forEach(f => {
+    if (!porCuartel[f.cuartel]) porCuartel[f.cuartel] = { cuartel: f.cuartel, campo: f.campo, variedad: f.variedad, estado_fenologico: f.estado_fenologico, productos: [] };
+    porCuartel[f.cuartel].productos.push(f);
+  });
+  const lista = Object.values(porCuartel).sort((a, b) => {
+    const pendA = a.productos.filter(p => !p.aplicado).length;
+    const pendB = b.productos.filter(p => !p.aplicado).length;
+    if (pendA !== pendB) return pendB - pendA; // cuarteles con más pendientes primero
+    return String(a.cuartel).localeCompare(String(b.cuartel));
+  });
+  cont.innerHTML = lista.map(c => {
+    const pend = c.productos.filter(p => !p.aplicado);
+    const badgeColor = pend.length === 0 ? 'var(--verde)' : (pend.length <= 2 ? 'var(--amarillo)' : 'var(--rojo)');
+    const badgeTxt = pend.length === 0 ? '✓ Al día' : (pend.length + ' pendiente' + (pend.length === 1 ? '' : 's'));
+    return `
+      <div class="card" style="cursor:pointer" onclick="abrirFenologiaDetalle('${String(c.cuartel).replace(/'/g, "\\'")}')">
+        <div class="card-body" style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-weight:700;font-size:15px;color:var(--texto)">${c.cuartel}${c.variedad ? ' · ' + c.variedad : ''}</div>
+            <div style="font-size:12px;color:var(--gris);margin-top:2px">${c.campo || ''}${c.estado_fenologico ? ' · ' + c.estado_fenologico : ''}</div>
+          </div>
+          <div style="font-size:12px;font-weight:700;color:${badgeColor};white-space:nowrap;margin-left:10px">${badgeTxt}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function abrirFenologiaDetalle(cuartel) {
+  mostrarVista('v-fenologia-detalle');
+  const items = fenologicosDB
+    .filter(f => f.especie === especieFenoActual && f.cuartel === cuartel)
+    .sort((a, b) => (a.aplicado === b.aplicado) ? 0 : (a.aplicado ? 1 : -1));
+  const primero = items[0] || {};
+  document.getElementById('feno-detalle-titulo').textContent = cuartel;
+  document.getElementById('feno-detalle-sub').textContent = [primero.campo, primero.variedad, primero.estado_fenologico].filter(Boolean).join(' · ');
+  const cont = document.getElementById('feno-detalle-lista');
+  cont.innerHTML = items.map(p => `
+    <div class="card">
+      <div class="card-body" style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-weight:600;font-size:14px;color:var(--texto)">${p.producto}</div>
+          <div style="font-size:12px;color:var(--gris);margin-top:2px">${p.fecha_programada ? 'Programado: ' + p.fecha_programada.split('-').reverse().join('/') : 'Sin fecha programada'}</div>
+        </div>
+        <div style="font-size:13px;font-weight:700;color:${p.aplicado ? 'var(--verde)' : 'var(--rojo)'};white-space:nowrap;margin-left:10px">${p.aplicado ? '✓ Aplicado' : '✗ Pendiente'}</div>
+      </div>
+    </div>
+  `).join('');
 }
 
 // El botón "← Volver" de la vista de una orden debe llevar a donde
