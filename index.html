@@ -1325,6 +1325,8 @@ function renderContraloria() {
       : `<span class="badge badge-verde">Hoy</span>`;
     const nombreEsc = (o.operador_nombre || o.operator_name || '').replace(/'/g, "\\'");
     const nroEsc = String(o.nro_orden || o.code_oa || '').replace(/'/g, "\\'");
+    const nombresProductos = Array.isArray(o.productos) ? o.productos.map(p => p.nombre || p.name).filter(Boolean) : [];
+    const productosTxt = nombresProductos.length ? nombresProductos.join(', ') : '—';
     return `
     <div class="orden-lista-item" onclick="modoContraloria=true; abrirOrdenOperador('${nombreEsc}', '${nroEsc}')">
       <div class="orden-lista-header">
@@ -1332,6 +1334,7 @@ function renderContraloria() {
         ${badge}
       </div>
       <div class="orden-lista-detalle">
+        <div class="orden-lista-dato" style="grid-column:1/-1">💊 ${productosTxt}</div>
         <div class="orden-lista-dato">👤 ${o.operador_nombre || o.operator_name || 'Sin asignar'}</div>
         <div class="orden-lista-dato">🚜 ${o.maquina || '—'}</div>
         <div class="orden-lista-dato">📍 ${o.sectores || '—'}</div>
