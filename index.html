@@ -175,7 +175,7 @@
 <!-- VISTA: ORDEN OPERADOR -->
 <div class="vista" id="v-orden-operador">
   <div class="orden-header">
-    <button class="back-btn" onclick="mostrarVista('v-operador-lista')">← Cambiar operador</button>
+    <button class="back-btn" onclick="volverDesdeOrden()">← Volver</button>
     <div class="orden-nro" id="orden-nro">OA N° —</div>
     <div class="orden-titulo" id="orden-especie">—</div>
     <div class="orden-sub" id="orden-sectores">—</div>
@@ -658,6 +658,18 @@ function construirFilasCuadernoCampo(ws) {
     }).filter(f => f.nro_orden && f.fecha_aplicacion);
 
     return filas;
+}
+
+// El botón "← Volver" de la vista de una orden debe llevar a donde
+// realmente se entró: si se abrió desde Control de Calidad (Contraloría),
+// vuelve a la lista de órdenes pendientes; si se abrió desde el listado de
+// Personal, vuelve ahí.
+function volverDesdeOrden() {
+  if (modoContraloria) {
+    mostrarVista('v-contraloria');
+  } else {
+    mostrarVista('v-operador-lista');
+  }
 }
 
 function mostrarVista(id) {
