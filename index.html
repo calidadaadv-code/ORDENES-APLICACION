@@ -329,6 +329,14 @@
     <input type="file" id="fenoFileInput" accept=".xlsx,.xls" style="display:none" onchange="cargarExcelFenologia(event)">
     <div id="fenoUploadStatus" style="font-size:11px;color:var(--gris);text-align:center;margin-bottom:14px"></div>
 
+    <button onclick="document.getElementById('fenoFileInput2').click()"
+      style="width:100%;padding:12px;border:1.5px dashed var(--gris-claro);border-radius:10px;background:var(--gris-claro);color:var(--texto-suave);cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:6px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Cargar cuarteles y programa fitosanitario (.xlsx)
+    </button>
+    <input type="file" id="fenoFileInput2" accept=".xlsx,.xls" style="display:none" onchange="cargarExcelProgramaFito(event)">
+    <div id="fenoUploadStatus2" style="font-size:11px;color:var(--gris);text-align:center;margin-bottom:14px"></div>
+
     <div class="seccion-titulo">Por especie</div>
     <div id="fenoStatus" style="font-size:12px;color:var(--gris);text-align:center;margin-bottom:8px"></div>
     <div id="feno-especies-lista"></div>
@@ -546,6 +554,14 @@ let controlesGuardadosSet = new Set();
 // controles guardados de "Órdenes listas".
 let fenologicosDB = [];
 let especieFenoActual = null;
+// Listado maestro de TODOS los cuarteles del fundo (especie/variedad), aunque
+// todavía no tengan datos en el archivo semanal de estados fenológicos.
+let cuartelesMaestroDB = [];
+// Programa fitosanitario maestro: qué producto(s) corresponden a cada
+// especie × estado fenológico. Es una referencia informativa — el estado
+// real de "aplicado / pendiente" de cada cuartel sigue viniendo del archivo
+// "% E. FENOLÓGICOS", que es el que efectivamente se marca en terreno.
+let productosProgramaDB = [];
 
 // ── INICIALIZACIÓN ──
 document.addEventListener('DOMContentLoaded', () => {
@@ -887,12 +903,148 @@ function construirFilasCuadernoCampo(ws) {
 // SEMANA, ESPECIE y VARIEDAD vienen en celdas combinadas (solo se llenan en
 // la primera fila de cada grupo), así que hay que arrastrar hacia abajo el
 // último valor visto.
+// Convierte un valor de fecha ya venido de una celda leída con cellDates:true
+// a texto "yyyy-mm-dd". Si la celda es de fecha real, SheetJS entrega un
+// objeto Date (en base UTC), así que toISOString() da el día correcto sin
+// desfases de huso horario. Si por alguna razón llega como texto ya
+// formateado ("2026-07-22...") se respeta tal cual; cualquier otro formato
+// ambiguo (ej. "22-Jul", sin año) se descarta a null en vez de guardarlo mal.
+function fechaExcelAISO(v) {
+  if (v == null || v === '') return null;
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return null;
+    return v.toISOString().split('T')[0];
+  }
+  const s = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  return null;
+}
+
+// Nombres canónicos de especie para mostrar, sin importar cómo venga escrita
+// en cada archivo (con o sin tilde, mayúscula/minúscula).
+const ESPECIE_LABELS = { CEREZO: 'Cerezo', NECTARIN: 'Nectarín', CIRUELO: 'Ciruelo', DURAZNO: 'Durazno' };
+
+function normalizarEspecie(s) {
+  return (s || '').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+}
+
+function labelEspecie(especieNorm) {
+  return ESPECIE_LABELS[especieNorm] || (especieNorm ? especieNorm.charAt(0) + especieNorm.slice(1).toLowerCase() : '—');
+}
+
+function normalizarTexto(s) {
+  return (s || '').toString().trim().toUpperCase();
+}
+
+// "C.06" (archivo de estados fenológicos) y "6" (listado maestro de
+// cuarteles) son el mismo cuartel — se normalizan a una misma clave para
+// poder cruzarlos sin duplicarlos.
+function normalizarCuartel(c) {
+  if (c == null) return '';
+  let s = String(c).trim().toUpperCase();
+  s = s.replace(/^C\.?\s*/, '');
+  s = s.replace(/^0+(?=\d)/, '');
+  return s;
+}
+
+function formatCuartelLabel(raw) {
+  const s = String(raw).trim();
+  if (/^\d+$/.test(s)) return 'C.' + (s.length < 2 ? '0' + s : s);
+  return 'C.' + s;
+}
+
+function esAtrasado(p) {
+  if (!p || p.aplicado || !p.fecha_programada) return false;
+  return p.fecha_programada < new Date().toISOString().split('T')[0];
+}
+
+// Une, para una especie dada, los cuarteles que ya tienen datos en el
+// archivo semanal ("% E. FENOLÓGICOS") con TODOS los cuarteles que existen
+// según el listado maestro — los que aún no tienen datos quedan marcados
+// con conDatos:false en vez de simplemente no aparecer.
+function obtenerCuartelesUnificados(especieNorm) {
+  const porCuartel = {};
+  fenologicosDB.filter(f => normalizarEspecie(f.especie) === especieNorm).forEach(f => {
+    const key = normalizarCuartel(f.cuartel);
+    if (!porCuartel[key]) porCuartel[key] = { cuartel: f.cuartel, campo: f.campo, variedad: f.variedad, estado_fenologico: f.estado_fenologico, productos: [], conDatos: true };
+    porCuartel[key].productos.push(f);
+  });
+  cuartelesMaestroDB.filter(c => normalizarEspecie(c.especie) === especieNorm).forEach(c => {
+    const key = normalizarCuartel(c.cuartel);
+    if (porCuartel[key]) return; // ya tiene datos del archivo semanal
+    porCuartel[key] = { cuartel: formatCuartelLabel(c.cuartel), campo: null, variedad: c.variedad, estado_fenologico: null, productos: [], conDatos: false };
+  });
+  return Object.values(porCuartel);
+}
+
+// Listado maestro de cuarteles (hoja "CUARTELES" del archivo que sube
+// Denisse junto con el programa fitosanitario). Encuentra las columnas por
+// nombre de encabezado, no por posición, así no importa el orden en que
+// vengan Especie / Variedad / Cuartel.
+function construirFilasCuartelesMaestro(ws) {
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+  let headerIdx = -1, colEspecie = -1, colVariedad = -1, colCuartel = -1;
+  for (let i = 0; i < rows.length; i++) {
+    const fila = rows[i];
+    if (!fila) continue;
+    const norm = fila.map(v => (v == null ? '' : String(v).trim().toUpperCase()));
+    const ie = norm.indexOf('ESPECIE');
+    const iv = norm.indexOf('VARIEDAD');
+    const ic = norm.indexOf('CUARTEL');
+    if (ie !== -1 && iv !== -1 && ic !== -1) { headerIdx = i; colEspecie = ie; colVariedad = iv; colCuartel = ic; break; }
+  }
+  if (headerIdx === -1) return [];
+  const filas = [];
+  for (let d = headerIdx + 1; d < rows.length; d++) {
+    const fila = rows[d];
+    if (!fila) continue;
+    const cuartel = fila[colCuartel];
+    if (cuartel == null || cuartel === '') continue;
+    filas.push({
+      cuartel: String(cuartel).trim(),
+      especie: (fila[colEspecie] || '').toString().trim(),
+      variedad: (fila[colVariedad] || '').toString().trim() || null,
+    });
+  }
+  return filas;
+}
+
+// Programa fitosanitario maestro (hoja "PRODUCTOS A APLICAR"): especie ×
+// estado fenológico → producto(s) que corresponden en esa etapa.
+function construirFilasProductosPrograma(ws) {
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+  let headerIdx = -1, colEspecie = -1, colEstado = -1, colProducto = -1;
+  for (let i = 0; i < rows.length; i++) {
+    const fila = rows[i];
+    if (!fila) continue;
+    const norm = fila.map(v => (v == null ? '' : String(v).trim().toUpperCase()));
+    const ie = norm.indexOf('ESPECIE');
+    const ist = norm.findIndex(v => v.indexOf('ESTADO FENOLOGICO') !== -1 || v.indexOf('ESTADO FENOLÓGICO') !== -1);
+    const ip = norm.indexOf('PRODUCTO');
+    if (ie !== -1 && ist !== -1 && ip !== -1) { headerIdx = i; colEspecie = ie; colEstado = ist; colProducto = ip; break; }
+  }
+  if (headerIdx === -1) return [];
+  const filas = [];
+  for (let d = headerIdx + 1; d < rows.length; d++) {
+    const fila = rows[d];
+    if (!fila) continue;
+    const especie = (fila[colEspecie] || '').toString().trim();
+    const estado = (fila[colEstado] || '').toString().trim();
+    const producto = (fila[colProducto] || '').toString().trim();
+    if (!especie || !estado || !producto) continue;
+    filas.push({ especie, estado_fenologico: estado, producto });
+  }
+  return filas;
+}
+
 function construirFilasEstadosFenologicos(ws) {
   const filas = [];
   // header:1 → filas como arreglos alineados a columnas (no por nombre,
-  // porque hay encabezados repetidos/vacíos). raw:false + dateNF fuerza que
-  // las fechas salgan como texto "yyyy-mm-dd" en vez de números de serie.
-  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false, dateNF: 'yyyy-mm-dd' });
+  // porque hay encabezados repetidos/vacíos). Las fechas llegan como objetos
+  // Date reales gracias a cellDates:true en la lectura del libro (ver
+  // cargarExcelFenologia) — así se evita que se lean con el formato de
+  // visualización propio de la celda (ej. "22-Jul", sin año).
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
 
   for (let i = 0; i < rows.length; i++) {
     const celda0 = rows[i] && rows[i][0];
@@ -932,7 +1084,6 @@ function construirFilasEstadosFenologicos(ws) {
       if (!cuartel) continue; // fila de separación entre tablas, sin datos
 
       productos.forEach(p => {
-        const valorFecha = fila[p.col];
         const valorBool = fila[p.col + 1];
         const aplicado = valorBool === true || valorBool === 'TRUE' || valorBool === 'true' || valorBool === 1 || valorBool === '1';
         filas.push({
@@ -943,7 +1094,7 @@ function construirFilasEstadosFenologicos(ws) {
           cuartel: String(cuartel).trim(),
           estado_fenologico: fila[5] || null,
           producto: p.nombre,
-          fecha_programada: valorFecha || null,
+          fecha_programada: fechaExcelAISO(fila[p.col]),
           aplicado: !!aplicado,
         });
       });
@@ -962,7 +1113,10 @@ async function cargarExcelFenologia(evt) {
 
   try {
     const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, { type: 'array' });
+    // cellDates:true → las celdas de fecha llegan como objetos Date reales
+    // (independiente del formato de visualización que tenga la celda, ej.
+    // "22-Jul"), para no perder el año al convertirlas a texto.
+    const wb = XLSX.read(buf, { type: 'array', cellDates: true });
     const nombreHoja = Object.keys(wb.Sheets).find(n => {
       const norm = n.replace(/\s+/g, ' ').trim().toUpperCase();
       return norm.indexOf('E. FENOL') !== -1 || norm.indexOf('ESTADOS FENOL') !== -1;
@@ -1009,16 +1163,119 @@ async function cargarExcelFenologia(evt) {
   }
 }
 
+// Carga el listado maestro de cuarteles y/o el programa fitosanitario desde
+// un mismo archivo (ej. "PRODUCTOS A APLICAR 2026.xlsx", con hojas
+// "CUARTELES" y "PRODUCTOS A APLICAR"). Se procesa cada hoja si está
+// presente — no hace falta que el archivo traiga las dos.
+async function cargarExcelProgramaFito(evt) {
+  const file = evt.target.files[0];
+  evt.target.value = '';
+  if (!file) return;
+  const statusEl = document.getElementById('fenoUploadStatus2');
+  statusEl.style.color = 'var(--gris)';
+  statusEl.textContent = 'Leyendo archivo…';
+
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+    const nombreCuarteles = Object.keys(wb.Sheets).find(n => n.trim().toUpperCase() === 'CUARTELES');
+    const nombreProductos = Object.keys(wb.Sheets).find(n => n.trim().toUpperCase().indexOf('PRODUCTOS A APLICAR') !== -1);
+
+    if (!nombreCuarteles && !nombreProductos) {
+      statusEl.style.color = 'var(--rojo)';
+      statusEl.textContent = 'El archivo no tiene hojas "CUARTELES" ni "PRODUCTOS A APLICAR".';
+      return;
+    }
+
+    const mensajes = [];
+
+    if (nombreCuarteles) {
+      const filasC = construirFilasCuartelesMaestro(wb.Sheets[nombreCuarteles]);
+      if (filasC.length) {
+        const resp = await fetch(`${SB_URL}/rest/v1/cuarteles_maestro?on_conflict=cuartel`, {
+          method: 'POST',
+          headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+          body: JSON.stringify(filasC)
+        });
+        if (!resp.ok) {
+          const texto = await resp.text();
+          statusEl.style.color = 'var(--rojo)';
+          statusEl.textContent = 'Error guardando cuarteles: ' + resp.status + ' ' + texto.slice(0, 200);
+          return;
+        }
+        mensajes.push(filasC.length + ' cuarteles');
+      }
+    }
+
+    if (nombreProductos) {
+      const filasP = construirFilasProductosPrograma(wb.Sheets[nombreProductos]);
+      if (filasP.length) {
+        const resp = await fetch(`${SB_URL}/rest/v1/productos_programa?on_conflict=especie,estado_fenologico,producto`, {
+          method: 'POST',
+          headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+          body: JSON.stringify(filasP)
+        });
+        if (!resp.ok) {
+          const texto = await resp.text();
+          statusEl.style.color = 'var(--rojo)';
+          statusEl.textContent = 'Error guardando programa fitosanitario: ' + resp.status + ' ' + texto.slice(0, 200);
+          return;
+        }
+        mensajes.push(filasP.length + ' productos del programa');
+      }
+    }
+
+    statusEl.style.color = 'var(--verde)';
+    statusEl.textContent = mensajes.length ? (mensajes.join(' y ') + ' actualizados.') : 'No se encontraron filas válidas para cargar.';
+    await cargarFenologicos();
+  } catch (e) {
+    statusEl.style.color = 'var(--rojo)';
+    statusEl.textContent = 'No se pudo leer el archivo: ' + e.message;
+  }
+}
+
+// Marca un producto como aplicado directamente desde la app (sin esperar a
+// la próxima subida del Excel semanal). Queda "pegado" en aplicado=true: si
+// más adelante se vuelve a subir un archivo que todavía lo muestra
+// pendiente, la carga NO lo hace retroceder (ver trigger en Supabase).
+async function marcarProductoAplicado(id, cuartelLabel) {
+  if (!confirm('¿Marcar este producto como aplicado?')) return;
+  try {
+    const resp = await fetch(`${SB_URL}/rest/v1/estados_fenologicos?id=eq.${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ aplicado: true })
+    });
+    if (!resp.ok) {
+      const texto = await resp.text();
+      alert('No se pudo guardar: ' + resp.status + ' ' + texto.slice(0, 200));
+      return;
+    }
+    const fila = fenologicosDB.find(f => String(f.id) === String(id));
+    if (fila) fila.aplicado = true;
+    abrirFenologiaDetalle(cuartelLabel);
+    renderFenologiaCuarteles();
+  } catch (e) {
+    alert('No se pudo guardar: ' + e.message);
+  }
+}
+
 async function cargarFenologicos() {
   const statusEl = document.getElementById('fenoStatus');
   statusEl.style.color = 'var(--gris)';
   statusEl.textContent = 'Cargando…';
   try {
-    const resp = await fetch(`${SB_URL}/rest/v1/estados_fenologicos?select=*&order=cuartel.asc`, {
-      headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
-    });
-    const data = await resp.json();
-    fenologicosDB = Array.isArray(data) ? data : [];
+    const [rFeno, rCuarteles, rProgFito] = await Promise.all([
+      fetch(`${SB_URL}/rest/v1/estados_fenologicos?select=*&order=cuartel.asc`, { headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` } }),
+      fetch(`${SB_URL}/rest/v1/cuarteles_maestro?select=*&order=cuartel.asc`, { headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` } }),
+      fetch(`${SB_URL}/rest/v1/productos_programa?select=*`, { headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` } }),
+    ]);
+    const dataFeno = await rFeno.json();
+    const dataCuarteles = await rCuarteles.json();
+    const dataProgFito = await rProgFito.json();
+    fenologicosDB = Array.isArray(dataFeno) ? dataFeno : [];
+    cuartelesMaestroDB = Array.isArray(dataCuarteles) ? dataCuarteles : [];
+    productosProgramaDB = Array.isArray(dataProgFito) ? dataProgFito : [];
     renderFenologiaEspecies();
   } catch (e) {
     statusEl.style.color = 'var(--rojo)';
@@ -1029,52 +1286,77 @@ async function cargarFenologicos() {
 function renderFenologiaEspecies() {
   const statusEl = document.getElementById('fenoStatus');
   const cont = document.getElementById('feno-especies-lista');
-  if (!fenologicosDB.length) {
+  if (!fenologicosDB.length && !cuartelesMaestroDB.length) {
     statusEl.style.color = 'var(--gris)';
     statusEl.textContent = 'Todavía no se ha cargado el archivo de estados fenológicos.';
     cont.innerHTML = '';
     return;
   }
   statusEl.textContent = '';
-  const especies = [...new Set(fenologicosDB.map(f => f.especie).filter(Boolean))].sort();
-  cont.innerHTML = especies.map(esp => {
-    const items = fenologicosDB.filter(f => f.especie === esp);
-    const cuartelesUnicos = new Set(items.map(f => f.cuartel));
-    const cuartelesPendientes = new Set(items.filter(f => !f.aplicado).map(f => f.cuartel));
+  const especiesNorm = [...new Set([
+    ...fenologicosDB.map(f => normalizarEspecie(f.especie)),
+    ...cuartelesMaestroDB.map(c => normalizarEspecie(c.especie)),
+  ].filter(Boolean))].sort();
+
+  cont.innerHTML = especiesNorm.map(en => {
+    const unificados = obtenerCuartelesUnificados(en);
+    let atrasados = 0, pendientesNoAtrasados = 0, sinDatos = 0;
+    unificados.forEach(c => {
+      if (!c.conDatos) { sinDatos++; return; }
+      const pend = c.productos.filter(p => !p.aplicado);
+      if (pend.some(esAtrasado)) atrasados++;
+      else if (pend.length) pendientesNoAtrasados++;
+    });
+    const partes = [`${unificados.length} cuartel${unificados.length === 1 ? '' : 'es'}`];
+    if (atrasados) partes.push(`<span style="color:var(--rojo);font-weight:700">${atrasados} atrasado${atrasados === 1 ? '' : 's'}</span>`);
+    if (pendientesNoAtrasados) partes.push(`${pendientesNoAtrasados} pendiente${pendientesNoAtrasados === 1 ? '' : 's'}`);
+    if (sinDatos) partes.push(`${sinDatos} sin datos aún`);
     return `
-      <div class="op-btn" onclick="abrirFenologiaCuarteles('${esp.replace(/'/g, "\\'")}')">
-        <div class="op-nombre">${esp}</div>
-        <div class="op-tractor">${cuartelesUnicos.size} cuartel${cuartelesUnicos.size === 1 ? '' : 'es'} · ${cuartelesPendientes.size} con aplicaciones pendientes</div>
+      <div class="op-btn" onclick="abrirFenologiaCuarteles('${en}')">
+        <div class="op-nombre">${labelEspecie(en)}</div>
+        <div class="op-tractor">${partes.join(' · ')}</div>
       </div>
     `;
   }).join('');
 }
 
-function abrirFenologiaCuarteles(especie) {
-  especieFenoActual = especie;
-  document.getElementById('feno-cuarteles-titulo').textContent = especie;
+function abrirFenologiaCuarteles(especieNorm) {
+  especieFenoActual = especieNorm;
+  document.getElementById('feno-cuarteles-titulo').textContent = labelEspecie(especieNorm);
   mostrarVista('v-fenologia-cuarteles');
   renderFenologiaCuarteles();
 }
 
 function renderFenologiaCuarteles() {
   const cont = document.getElementById('feno-cuarteles-lista');
-  const items = fenologicosDB.filter(f => f.especie === especieFenoActual);
-  const porCuartel = {};
-  items.forEach(f => {
-    if (!porCuartel[f.cuartel]) porCuartel[f.cuartel] = { cuartel: f.cuartel, campo: f.campo, variedad: f.variedad, estado_fenologico: f.estado_fenologico, productos: [] };
-    porCuartel[f.cuartel].productos.push(f);
-  });
-  const lista = Object.values(porCuartel).sort((a, b) => {
-    const pendA = a.productos.filter(p => !p.aplicado).length;
-    const pendB = b.productos.filter(p => !p.aplicado).length;
-    if (pendA !== pendB) return pendB - pendA; // cuarteles con más pendientes primero
-    return String(a.cuartel).localeCompare(String(b.cuartel));
+  const unificados = obtenerCuartelesUnificados(especieFenoActual);
+  const lista = unificados.slice().sort((a, b) => {
+    const scoreDe = (c) => {
+      if (!c.conDatos) return 50000;
+      const pend = c.productos.filter(p => !p.aplicado);
+      const atrasados = pend.filter(esAtrasado).length;
+      return atrasados > 0 ? 100000 + atrasados : pend.length;
+    };
+    const diff = scoreDe(b) - scoreDe(a);
+    if (diff !== 0) return diff;
+    return String(a.cuartel).localeCompare(String(b.cuartel), undefined, { numeric: true });
   });
   cont.innerHTML = lista.map(c => {
-    const pend = c.productos.filter(p => !p.aplicado);
-    const badgeColor = pend.length === 0 ? 'var(--verde)' : (pend.length <= 2 ? 'var(--amarillo)' : 'var(--rojo)');
-    const badgeTxt = pend.length === 0 ? '✓ Al día' : (pend.length + ' pendiente' + (pend.length === 1 ? '' : 's'));
+    let badgeColor, badgeTxt;
+    if (!c.conDatos) {
+      badgeColor = 'var(--gris)';
+      badgeTxt = 'Sin datos aún';
+    } else {
+      const pend = c.productos.filter(p => !p.aplicado);
+      const atrasados = pend.filter(esAtrasado);
+      if (atrasados.length) {
+        badgeColor = 'var(--rojo)';
+        badgeTxt = '⚠ ' + atrasados.length + ' atrasado' + (atrasados.length === 1 ? '' : 's');
+      } else {
+        badgeColor = pend.length === 0 ? 'var(--verde)' : (pend.length <= 2 ? 'var(--amarillo)' : 'var(--rojo)');
+        badgeTxt = pend.length === 0 ? '✓ Al día' : (pend.length + ' pendiente' + (pend.length === 1 ? '' : 's'));
+      }
+    }
     return `
       <div class="card" style="cursor:pointer" onclick="abrirFenologiaDetalle('${String(c.cuartel).replace(/'/g, "\\'")}')">
         <div class="card-body" style="display:flex;justify-content:space-between;align-items:center">
@@ -1091,24 +1373,69 @@ function renderFenologiaCuarteles() {
 
 function abrirFenologiaDetalle(cuartel) {
   mostrarVista('v-fenologia-detalle');
-  const items = fenologicosDB
-    .filter(f => f.especie === especieFenoActual && f.cuartel === cuartel)
-    .sort((a, b) => (a.aplicado === b.aplicado) ? 0 : (a.aplicado ? 1 : -1));
-  const primero = items[0] || {};
-  document.getElementById('feno-detalle-titulo').textContent = cuartel;
-  document.getElementById('feno-detalle-sub').textContent = [primero.campo, primero.variedad, primero.estado_fenologico].filter(Boolean).join(' · ');
+  const claveCuartel = normalizarCuartel(cuartel);
+  const unificados = obtenerCuartelesUnificados(especieFenoActual);
+  const entrada = unificados.find(c => normalizarCuartel(c.cuartel) === claveCuartel);
+
+  document.getElementById('feno-detalle-titulo').textContent = entrada ? entrada.cuartel : cuartel;
+  document.getElementById('feno-detalle-sub').textContent = entrada
+    ? [entrada.campo, entrada.variedad, entrada.estado_fenologico].filter(Boolean).join(' · ')
+    : '';
   const cont = document.getElementById('feno-detalle-lista');
-  cont.innerHTML = items.map(p => `
-    <div class="card">
-      <div class="card-body" style="display:flex;justify-content:space-between;align-items:center">
+
+  if (!entrada || !entrada.conDatos) {
+    cont.innerHTML = '<div class="card"><div class="card-body" style="text-align:center;padding:32px;color:var(--gris)">Todavía no hay datos de estados fenológicos para este cuartel.<br>Se cargarán con el próximo archivo "% E. FENOLÓGICOS".</div></div>';
+    return;
+  }
+
+  const items = entrada.productos.slice().sort((a, b) => {
+    const atA = esAtrasado(a), atB = esAtrasado(b);
+    if (atA !== atB) return atA ? -1 : 1; // atrasados primero
+    if (a.aplicado !== b.aplicado) return a.aplicado ? 1 : -1; // luego pendientes, aplicados al final
+    return 0;
+  });
+
+  const cuartelLabelEsc = entrada.cuartel.replace(/'/g, "\\'");
+  let html = items.map(p => {
+    const atrasado = esAtrasado(p);
+    const estadoTxt = p.aplicado ? '✓ Aplicado' : (atrasado ? '⚠ Atrasado' : '✗ Pendiente');
+    const estadoColor = p.aplicado ? 'var(--verde)' : 'var(--rojo)';
+    return `
+    <div class="card"${atrasado ? ' style="border-color:var(--rojo)"' : ''}>
+      <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
         <div>
           <div style="font-weight:600;font-size:14px;color:var(--texto)">${p.producto}</div>
-          <div style="font-size:12px;color:var(--gris);margin-top:2px">${p.fecha_programada ? 'Programado: ' + p.fecha_programada.split('-').reverse().join('/') : 'Sin fecha programada'}</div>
+          <div style="font-size:12px;color:${atrasado ? 'var(--rojo)' : 'var(--gris)'};margin-top:2px">${p.fecha_programada ? 'Programado: ' + p.fecha_programada.split('-').reverse().join('/') : 'Sin fecha programada'}</div>
         </div>
-        <div style="font-size:13px;font-weight:700;color:${p.aplicado ? 'var(--verde)' : 'var(--rojo)'};white-space:nowrap;margin-left:10px">${p.aplicado ? '✓ Aplicado' : '✗ Pendiente'}</div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:13px;font-weight:700;color:${estadoColor};white-space:nowrap">${estadoTxt}</div>
+          ${!p.aplicado ? `<button onclick="marcarProductoAplicado('${p.id}', '${cuartelLabelEsc}')" style="margin-top:6px;font-size:11px;font-weight:600;color:var(--verde);background:var(--verde-bg);border:1px solid var(--verde-claro);border-radius:6px;padding:4px 8px;cursor:pointer;font-family:inherit">✓ Marcar aplicado</button>` : ''}
+        </div>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
+
+  // Referencia informativa: qué dice el programa fitosanitario maestro para
+  // la especie y el estado fenológico actual de este cuartel (no reemplaza
+  // el estado real de aplicado/pendiente de arriba, que viene del archivo
+  // semanal — solo ayuda a verificar que no falte nada del programa).
+  if (entrada.estado_fenologico) {
+    const refProductos = productosProgramaDB.filter(pp =>
+      normalizarEspecie(pp.especie) === especieFenoActual &&
+      normalizarTexto(pp.estado_fenologico) === normalizarTexto(entrada.estado_fenologico)
+    );
+    if (refProductos.length) {
+      html += `
+        <div class="seccion-titulo">Según el programa fitosanitario (${entrada.estado_fenologico})</div>
+        <div class="card"><div class="card-body" style="font-size:13px;color:var(--texto)">
+          ${refProductos.map(pp => pp.producto).join(', ')}
+        </div></div>
+      `;
+    }
+  }
+
+  cont.innerHTML = html;
 }
 
 // El botón "← Volver" de la vista de una orden debe llevar a donde
