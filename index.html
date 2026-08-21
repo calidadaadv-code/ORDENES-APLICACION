@@ -177,6 +177,7 @@
   <div class="orden-header">
     <button class="back-btn" onclick="volverDesdeOrden()">← Volver</button>
     <div class="orden-nro" id="orden-nro">OA N° —</div>
+    <div id="orden-operador" style="font-size:16px;font-weight:700;margin-bottom:2px">👤 —</div>
     <div class="orden-titulo" id="orden-especie">—</div>
     <div class="orden-sub" id="orden-sectores">—</div>
   </div>
@@ -188,6 +189,7 @@
   <div class="cont-tabs">
     <button class="back-btn" style="color:var(--gris);padding:12px 16px;font-size:13px" onclick="mostrarVista('v-inicio')">←</button>
     <div class="tab activo" onclick="cambiarTab('t-ordenes',this)">Órdenes</div>
+    <div class="tab" onclick="cambiarTab('t-listas',this); cargarControlesGuardados()">Órdenes listas</div>
     <div class="tab" onclick="cambiarTab('t-alertas',this)">Alertas</div>
   </div>
   <div class="cont-body">
@@ -205,6 +207,12 @@
 
       <div class="seccion-titulo">Órdenes del día</div>
       <div id="ordenes-lista"></div>
+    </div>
+    <!-- TAB ÓRDENES LISTAS (informe de controles de calidad guardados) -->
+    <div class="tab-content" id="t-listas">
+      <div class="seccion-titulo">Controles de calidad guardados</div>
+      <div id="controles-lista-status" style="font-size:11px;color:var(--gris);text-align:center;margin-bottom:10px"></div>
+      <div id="controles-lista"></div>
     </div>
     <!-- TAB ALERTAS -->
     <div class="tab-content" id="t-alertas">
@@ -339,6 +347,13 @@ const DIAS_ATRASO_MAX = 10;
 // siga dentro del rango de DIAS_ATRASO_MAX.
 let ordenesCompletadasSet = new Set();
 
+// Combinaciones "nro_orden||operador" que YA tienen un control de calidad
+// guardado — cada tarjeta individual (una orden puede tener varias, una
+// por operador) desaparece de "pendientes" apenas ESE operador guarda su
+// revisión, sin afectar a otros operadores que compartan la misma orden y
+// todavía no hayan revisado la suya.
+let controlesGuardadosSet = new Set();
+
 // ── INICIALIZACIÓN ──
 document.addEventListener('DOMContentLoaded', () => {
   const ahora = new Date();
@@ -359,7 +374,7 @@ async function cargarDesdeSupabase() {
     limite.setDate(limite.getDate() - DIAS_ATRASO_MAX);
     const limiteStr = limite.toISOString().split('T')[0];
 
-    const [rOps, rOrds, rCompletadas] = await Promise.all([
+    const [rOps, rOrds, rCompletadas, rControles] = await Promise.all([
       fetch(`${SB_URL}/rest/v1/operadores?activo=eq.true&select=*`, { headers: { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}` } }),
       // Trae desde "hace DIAS_ATRASO_MAX días" hasta hoy (no solo hoy): así
       // aparecen también órdenes de días anteriores que aún no se han
@@ -367,14 +382,19 @@ async function cargarDesdeSupabase() {
       // ejecutarse varios días después. Las más viejas que eso ya no se
       // listan solas (ver DIAS_ATRASO_MAX arriba).
       fetch(`${SB_URL}/rest/v1/ordenes_aplicacion?fecha_aplicacion=gte.${limiteStr}&fecha_aplicacion=lte.${hoyStr}&select=*&order=fecha_aplicacion.asc`, { headers: { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}` } }),
-      fetch(`${SB_URL}/rest/v1/ordenes_completadas?select=nro_orden`, { headers: { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}` } })
+      fetch(`${SB_URL}/rest/v1/ordenes_completadas?select=nro_orden`, { headers: { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}` } }),
+      // Qué combinaciones (orden × operador) ya tienen un control guardado
+      // — para sacarlas de "pendientes" apenas ese operador revisa la suya.
+      fetch(`${SB_URL}/rest/v1/control_calidad_ordenes?select=nro_orden,operador_nombre`, { headers: { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}` } })
     ]);
     const ops = await rOps.json();
     const ords = await rOrds.json();
     const completadas = await rCompletadas.json();
+    const controlesGuardados = await rControles.json();
     if (Array.isArray(ops) && ops.length > 0) operadoresDB = ops.map(o => ({ nombre: o.nombre, tractor: o.tractor, pulverizadora: o.pulverizadora, telefono: o.telefono, venc_licencia: o.vencimiento_licencia }));
     if (Array.isArray(ords) && ords.length > 0) ordenesDB = ords;
     if (Array.isArray(completadas)) ordenesCompletadasSet = new Set(completadas.map(c => String(c.nro_orden)));
+    if (Array.isArray(controlesGuardados)) controlesGuardadosSet = new Set(controlesGuardados.map(c => String(c.nro_orden) + '||' + c.operador_nombre));
     renderListaOperadores();
     renderContraloria();
   } catch(e) { console.log("Usando datos de ejemplo:", e.message); }
@@ -772,6 +792,7 @@ function abrirOrdenOperador(nombre, nroOrden) {
   const operador = operadoresDB.find(o => o.nombre === nombre);
 
   document.getElementById('orden-nro').textContent = orden ? `OA N° ${orden.nro_orden || orden.code_oa}` : 'Sin orden asignada hoy';
+  document.getElementById('orden-operador').textContent = '👤 ' + (orden ? (orden.operador_nombre || orden.operator_name || nombre) : nombre);
   document.getElementById('orden-especie').textContent = orden ? `${orden.especie || ''} — ${orden.variedad || ''}` : nombre;
   document.getElementById('orden-sectores').textContent = orden ? `${orden.sectores || ''}` : 'No hay orden de aplicación para hoy';
 
@@ -1203,7 +1224,15 @@ async function guardarChecklist(evt) {
     }
 
     alert(`✅ Revisión guardada\n\n${marcados}/${totalItems} items verificados · ${eppMarcados}/${totalEpp} EPP\n${!isNaN(litrosRealRaw) ? litrosRealRaw + ' L registrados como tu parte' : 'Sin litros registrados'}\nClima real: ${climaTemp || '—'} · ${climaViento || '—'} · ${climaHum || '—'}\n${obs ? 'Obs: ' + obs : 'Sin observaciones'}`);
-    await cargarResumenControlOrden(ordenActualParaChecklist.nro_orden);
+
+    // Esta orden (para ESTE operador específico) ya quedó revisada: se saca
+    // sola de "pendientes" y se vuelve a la lista para verla desaparecer.
+    // Si la misma OA la comparten otros operadores que aún no revisan la
+    // suya, sus tarjetas siguen apareciendo — solo se marca la de quien
+    // acaba de guardar.
+    controlesGuardadosSet.add(String(ordenActualParaChecklist.nro_orden) + '||' + ordenActualParaChecklist.operador_nombre);
+    renderContraloria();
+    mostrarVista('v-contraloria');
   } catch (e) {
     alert('❌ No se pudo guardar la revisión: ' + e.message);
   } finally {
@@ -1295,6 +1324,66 @@ async function marcarOrdenAplicada(nroOrden, btn) {
   }
 }
 
+// Trae TODOS los controles de calidad guardados (tabla control_calidad_ordenes)
+// y los muestra como informe, más recientes primero. Se carga solo al abrir
+// la pestaña "Órdenes listas" para no pegarle a Supabase en cada render.
+async function cargarControlesGuardados() {
+  const statusEl = document.getElementById('controles-lista-status');
+  const listaEl = document.getElementById('controles-lista');
+  if (!listaEl) return;
+  statusEl.textContent = 'Cargando…';
+  try {
+    const resp = await fetch(`${SB_URL}/rest/v1/control_calidad_ordenes?select=*&order=created_at.desc&limit=300`, {
+      headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
+    });
+    if (!resp.ok) {
+      statusEl.textContent = 'No se pudieron cargar los controles guardados.';
+      listaEl.innerHTML = '';
+      return;
+    }
+    const controles = await resp.json();
+    if (!Array.isArray(controles) || !controles.length) {
+      statusEl.textContent = '';
+      listaEl.innerHTML = '<div style="color:var(--gris);font-size:13px;padding:20px;text-align:center">Todavía no se ha guardado ningún control de calidad.</div>';
+      return;
+    }
+    statusEl.textContent = `${controles.length} control${controles.length === 1 ? '' : 'es'} guardado${controles.length === 1 ? '' : 's'}`;
+
+    listaEl.innerHTML = controles.map(c => {
+      // Contexto extra (especie/sectores) si la orden todavía está en
+      // memoria (dentro de la ventana de días que se trae de Supabase);
+      // si no está, el informe igual muestra lo que quedó guardado en el
+      // control mismo.
+      const ordenRef = ordenesDB.find(o => String(o.nro_orden || o.code_oa) === String(c.nro_orden));
+      const contexto = ordenRef ? `${ordenRef.especie || ''}${ordenRef.sectores ? ' — ' + ordenRef.sectores : ''}` : '';
+      const marcadaAplicada = ordenesCompletadasSet.has(String(c.nro_orden));
+      const fecha = c.fecha_verificacion || (c.created_at ? c.created_at.split('T')[0] : '—');
+      const clima = [c.clima_temp_real, c.clima_viento_real, c.clima_humedad_real].filter(Boolean).join(' · ');
+      return `
+      <div class="card" style="margin-bottom:10px">
+        <div class="card-header">
+          <div class="card-header-icon" style="background:var(--verde-bg)">📋</div>
+          <div class="card-titulo" style="flex:1">OA ${c.nro_orden}${contexto ? ' — ' + contexto : ''}</div>
+          ${marcadaAplicada ? '<span class="badge badge-verde">Orden aplicada</span>' : ''}
+        </div>
+        <div class="card-body">
+          <div class="dato-row"><span class="dato-label">Operador</span><span class="dato-valor">${c.operador_nombre || '—'}</span></div>
+          <div class="dato-row"><span class="dato-label">Fecha revisión</span><span class="dato-valor">${fecha}</span></div>
+          <div class="dato-row"><span class="dato-label">Litros reales (su parte)</span><span class="dato-valor">${c.litros_reales != null ? c.litros_reales + ' L' : '—'}</span></div>
+          <div class="dato-row"><span class="dato-label">Producto real</span><span class="dato-valor">${c.producto_real != null ? c.producto_real : '—'}</span></div>
+          <div class="dato-row"><span class="dato-label">Checklist</span><span class="dato-valor">${c.items_verificados ?? 0} / ${c.total_items ?? '—'} ítems</span></div>
+          <div class="dato-row"><span class="dato-label">EPP verificado</span><span class="dato-valor">${c.epp_verificados ?? 0} / ${c.total_epp ?? '—'}</span></div>
+          ${clima ? `<div class="dato-row"><span class="dato-label">Clima real</span><span class="dato-valor">${clima}</span></div>` : ''}
+          ${c.observaciones ? `<div class="dato-row" style="align-items:flex-start"><span class="dato-label">Observaciones</span><span class="dato-valor" style="text-align:right;max-width:60%">${c.observaciones}</span></div>` : ''}
+        </div>
+      </div>
+    `;
+    }).join('');
+  } catch (e) {
+    statusEl.textContent = 'No se pudieron cargar los controles guardados: ' + e.message;
+  }
+}
+
 // ── CONTRALORÍA ──
 function renderContraloria() {
   const hoy = new Date().toISOString().split('T')[0];
@@ -1302,7 +1391,11 @@ function renderContraloria() {
   // todavía no se han aplicado (fecha planificada pasada, ejecución
   // real más tardía) — ordenadas con las más atrasadas primero.
   const ordenesHoy = ordenesDB
-    .filter(o => (o.fecha_aplicacion <= hoy || ordenesDB === ORDENES) && !ordenesCompletadasSet.has(String(o.nro_orden || o.code_oa)))
+    .filter(o => {
+      const nro = String(o.nro_orden || o.code_oa);
+      const clave = nro + '||' + (o.operador_nombre || o.operator_name || '');
+      return (o.fecha_aplicacion <= hoy || ordenesDB === ORDENES) && !ordenesCompletadasSet.has(nro) && !controlesGuardadosSet.has(clave);
+    })
     .slice()
     .sort((a, b) => (a.fecha_aplicacion || '').localeCompare(b.fecha_aplicacion || ''));
   const ordenesAtrasadas = ordenesHoy.filter(o => o.fecha_aplicacion && o.fecha_aplicacion < hoy).length;
