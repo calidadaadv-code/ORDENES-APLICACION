@@ -344,7 +344,11 @@ async function cargarDesdeSupabase() {
   try {
     const [rOps, rOrds] = await Promise.all([
       fetch(`${SB_URL}/rest/v1/operadores?activo=eq.true&select=*`, { headers: { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}` } }),
-      fetch(`${SB_URL}/rest/v1/ordenes_aplicacion?fecha_aplicacion=eq.${new Date().toISOString().split('T')[0]}&select=*`, { headers: { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}` } })
+      // "lte" (menor o igual a hoy) en vez de "eq" (igual a hoy): así también
+      // aparecen órdenes de días anteriores que aún no se han aplicado —
+      // una orden puede tener fecha planificada pasada pero ejecutarse
+      // varios días después.
+      fetch(`${SB_URL}/rest/v1/ordenes_aplicacion?fecha_aplicacion=lte.${new Date().toISOString().split('T')[0]}&select=*&order=fecha_aplicacion.asc`, { headers: { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}` } })
     ]);
     const ops = await rOps.json();
     const ords = await rOrds.json();
@@ -712,15 +716,26 @@ function cerrarFichaOperador() {
 
 // ── ORDEN OPERADOR ──
 let modoContraloria = false;
+// Contexto de la orden/operador que está abierta en el checklist de
+// contraloría — se usa para guardar en Supabase y para sumar contra el
+// total de la orden cuando varios operadores comparten la misma orden.
+let ordenActualParaChecklist = null;
 
-function abrirOrdenDesdeContraloria(nombre) {
+function abrirOrdenDesdeContraloria(nombre, nroOrden) {
   modoContraloria = true;
-  abrirOrdenOperador(nombre);
+  abrirOrdenOperador(nombre, nroOrden);
 }
 
-function abrirOrdenOperador(nombre) {
+// nroOrden es opcional: si un mismo operador tiene más de una orden
+// pendiente (por ejemplo la de hoy y otra atrasada de días anteriores),
+// permite abrir justo la que se clickeó en la lista en vez de siempre la
+// primera que calce con el nombre.
+function abrirOrdenOperador(nombre, nroOrden) {
   if (!modoContraloria) modoContraloria = false;
-  const orden = ordenesDB.find(o => o.operador_nombre === nombre || (o.operator_name && o.operator_name.toUpperCase().includes(nombre.split(' ')[0])));
+  const orden = ordenesDB.find(o =>
+    (o.operador_nombre === nombre || (o.operator_name && o.operator_name.toUpperCase().includes(nombre.split(' ')[0])))
+    && (!nroOrden || String(o.nro_orden || o.code_oa) === String(nroOrden))
+  );
   const operador = operadoresDB.find(o => o.nombre === nombre);
 
   document.getElementById('orden-nro').textContent = orden ? `OA N° ${orden.nro_orden || orden.code_oa}` : 'Sin orden asignada hoy';
@@ -745,6 +760,16 @@ function abrirOrdenOperador(nombre) {
 
   const productos = Array.isArray(orden.productos) ? orden.productos : [];
   const epp = Array.isArray(orden.epp) ? orden.epp : [];
+
+  if (modoContraloria) {
+    ordenActualParaChecklist = {
+      nro_orden: orden.nro_orden,
+      operador_nombre: orden.operador_nombre || nombre,
+      litrosOrdenados: (orden.mojamiento || 0) * (orden.hectareas || 0),
+    };
+  } else {
+    ordenActualParaChecklist = null;
+  }
 
   body.innerHTML = `
     ${alertaLic}
@@ -902,27 +927,34 @@ function abrirOrdenOperador(nombre) {
             </div>
           </div>
           <div style="border-top:1px solid var(--borde);padding-top:10px">
-            <div style="font-size:11px;color:var(--amarillo);font-weight:600;margin-bottom:8px">Ingresa lo real aplicado:</div>
+            <div style="font-size:11px;color:var(--amarillo);font-weight:600;margin-bottom:8px">Ingresa lo que TÚ aplicaste (tu parte, si trabajaste junto a otros operadores en esta orden):</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
               <div>
-                <div style="font-size:11px;color:var(--gris);margin-bottom:4px">Litros reales (L)</div>
-                <input type="number" id="dosis-litros-real" placeholder="ej: 11500"
+                <div style="font-size:11px;color:var(--gris);margin-bottom:4px">Litros reales aplicados por ti (L)</div>
+                <input type="number" id="dosis-litros-real" placeholder="ej: 7000"
                   style="width:100%;padding:10px;border:2px solid var(--borde);border-radius:8px;font-size:15px;font-weight:700;text-align:center"
-                  oninput="calcularDesvio(${(orden.mojamiento||0) * (orden.hectareas||0)}, '${orden.productos?.[0]?.dosis_100l || ''}')"
+                  oninput="calcularDesvio('${orden.productos?.[0]?.dosis_100l || ''}')"
                   onfocus="this.style.borderColor='var(--amarillo)'"
                   onblur="this.style.borderColor='var(--borde)'"/>
               </div>
               <div>
                 <div style="font-size:11px;color:var(--gris);margin-bottom:4px">Producto real (kg/L)</div>
-                <input type="number" id="dosis-producto-real" placeholder="ej: 15.8"
+                <input type="number" id="dosis-producto-real" placeholder="ej: 3.9"
                   style="width:100%;padding:10px;border:2px solid var(--borde);border-radius:8px;font-size:15px;font-weight:700;text-align:center"
-                  oninput="calcularDesvio(${(orden.mojamiento||0) * (orden.hectareas||0)}, '${orden.productos?.[0]?.dosis_100l || ''}')"
+                  oninput="calcularDesvio('${orden.productos?.[0]?.dosis_100l || ''}')"
                   onfocus="this.style.borderColor='var(--amarillo)'"
                   onblur="this.style.borderColor='var(--borde)'"/>
               </div>
             </div>
           </div>
           <div id="dosis-resultado" style="display:none;margin-top:10px;padding:10px;border-radius:8px;font-size:13px;font-weight:600;text-align:center"></div>
+
+          <div style="border-top:1px solid var(--borde);margin-top:12px;padding-top:10px">
+            <div style="font-size:11px;color:var(--gris);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Total acumulado de esta orden (todos los operadores)</div>
+            <div id="resumen-orden-total" style="padding:10px 12px;background:white;border:1px dashed var(--borde);border-radius:8px;font-size:12px;color:var(--gris)">
+              Cargando…
+            </div>
+          </div>
         </div>
 
         <p style="font-size:11px;color:var(--gris);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin:14px 0 8px">Verificación producto</p>
@@ -971,7 +1003,7 @@ function abrirOrdenOperador(nombre) {
           0 / 9 items verificados
         </div>
 
-        <button onclick="guardarChecklist()" style="width:100%;margin-top:12px;padding:14px;background:var(--amarillo);color:white;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer">
+        <button onclick="guardarChecklist(event)" style="width:100%;margin-top:12px;padding:14px;background:var(--amarillo);color:white;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer">
           💾 Guardar revisión
         </button>
       </div>
@@ -981,9 +1013,12 @@ function abrirOrdenOperador(nombre) {
   `;
 
   mostrarVista('v-orden-operador');
+  if (modoContraloria && ordenActualParaChecklist?.nro_orden) {
+    cargarResumenControlOrden(ordenActualParaChecklist.nro_orden);
+  }
 }
 
-function calcularDesvio(litrosOrdenados, dosis100L) {
+function calcularDesvio(dosis100L) {
   const litrosReal = parseFloat(document.getElementById('dosis-litros-real')?.value);
   const productoReal = parseFloat(document.getElementById('dosis-producto-real')?.value);
   const resultado = document.getElementById('dosis-resultado');
@@ -994,28 +1029,60 @@ function calcularDesvio(litrosOrdenados, dosis100L) {
 
   let msgs = [];
 
-  // Desvío litros
-  if (litrosReal && litrosOrdenados > 0) {
-    const desvioL = ((litrosReal - litrosOrdenados) / litrosOrdenados * 100).toFixed(1);
-    const ok = Math.abs(desvioL) <= 5;
-    msgs.push(`${ok ? '✅' : '⚠️'} Litros: ${litrosReal}L real vs ${litrosOrdenados}L ordenado (${desvioL > 0 ? '+' : ''}${desvioL}%)`);
-  }
-
-  // Desvío producto — calcula dosis esperada según litros reales
+  // No se compara el litraje individual contra el total de la orden aquí,
+  // porque cuando varios operadores comparten la misma orden cada uno solo
+  // aplica una parte — esa comparación (suma de todos vs. total ordenado)
+  // se muestra abajo, en "Total acumulado de esta orden".
+  //
+  // Lo que SÍ se puede verificar con una sola entrada es que la MEZCLA esté
+  // bien hecha: que la concentración (producto por cada 100L) coincida con
+  // la dosis de la orden, sin importar cuántos litros haya aplicado.
   if (productoReal && litrosReal && dosis100L) {
     const dosisNum = parseFloat(dosis100L);
     if (dosisNum > 0) {
       const productoEsperado = (litrosReal / 100 * dosisNum / 1000); // cc→L o g→kg
       const desvioP = ((productoReal - productoEsperado) / productoEsperado * 100).toFixed(1);
       const ok = Math.abs(desvioP) <= 5;
-      msgs.push(`${ok ? '✅' : '⚠️'} Producto: ${productoReal} real vs ${productoEsperado.toFixed(2)} esperado (${desvioP > 0 ? '+' : ''}${desvioP}%)`);
+      msgs.push(`${ok ? '✅' : '⚠️'} Mezcla: ${productoReal} real vs ${productoEsperado.toFixed(2)} esperado para ${litrosReal}L (${desvioP > 0 ? '+' : ''}${desvioP}%)`);
     }
+  } else if (litrosReal) {
+    msgs.push(`ℹ️ ${litrosReal}L registrados como tu parte de esta orden.`);
   }
 
   const hayError = msgs.some(m => m.startsWith('⚠️'));
   resultado.style.background = hayError ? 'var(--rojo-bg)' : '#e0f0dc';
   resultado.style.color = hayError ? 'var(--rojo)' : 'var(--verde)';
   resultado.innerHTML = msgs.join('<br>');
+}
+
+// Trae de Supabase todo lo ya registrado por CUALQUIER operador para esta
+// misma orden y suma los litros/producto reales, para comparar el total
+// acumulado contra lo ordenado.
+async function cargarResumenControlOrden(nroOrden) {
+  const el = document.getElementById('resumen-orden-total');
+  if (!el) return;
+  try {
+    const resp = await fetch(`${SB_URL}/rest/v1/control_calidad_ordenes?nro_orden=eq.${encodeURIComponent(nroOrden)}&select=operador_nombre,litros_reales,producto_real`, {
+      headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
+    });
+    if (!resp.ok) { el.textContent = 'No se pudo cargar el resumen de la orden.'; return; }
+    const rows = await resp.json();
+    if (!Array.isArray(rows) || !rows.length) {
+      el.innerHTML = 'Nadie ha registrado litros aplicados en esta orden todavía.';
+      return;
+    }
+    const litrosTotal = rows.reduce((s, r) => s + (Number(r.litros_reales) || 0), 0);
+    const productoTotal = rows.reduce((s, r) => s + (Number(r.producto_real) || 0), 0);
+    const litrosOrdenados = ordenActualParaChecklist?.litrosOrdenados || 0;
+    const pctTxt = litrosOrdenados > 0 ? `${((litrosTotal / litrosOrdenados) * 100).toFixed(0)}% de los ${litrosOrdenados.toFixed(0)} L ordenados` : '';
+    const ok = litrosOrdenados > 0 ? Math.abs((litrosTotal - litrosOrdenados) / litrosOrdenados * 100) <= 5 : true;
+    el.innerHTML = `<span style="font-weight:700;color:${ok ? 'var(--verde)' : 'var(--rojo)'}">${litrosTotal.toFixed(0)} L</span> aplicados en total` +
+      (productoTotal ? ` · ${productoTotal.toFixed(2)} producto` : '') +
+      ` — registrado por ${rows.length} operador${rows.length === 1 ? '' : 'es'}` +
+      (pctTxt ? `<br>${pctTxt}` : '');
+  } catch (e) {
+    el.textContent = 'No se pudo cargar el resumen de la orden.';
+  }
 }
 
 let cqChecks = {};
@@ -1047,16 +1114,68 @@ function toggleCQ(i, label) {
   }
 }
 
-function guardarChecklist() {
+async function guardarChecklist(evt) {
+  if (!ordenActualParaChecklist?.nro_orden) {
+    alert('No hay una orden activa para guardar.');
+    return;
+  }
+
   const marcados = Object.values(cqChecks).filter(Boolean).length;
+  const totalItems = document.querySelectorAll('[id^="cq-label-"]').length;
+  const eppMarcados = Object.values(eppChecks).filter(Boolean).length;
+  const totalEpp = document.querySelectorAll('[id^="epp-label-"]').length;
   const obs = document.getElementById('cq-observaciones')?.value || '';
   const climaTemp = document.getElementById('clima-temp-real')?.value || '';
   const climaViento = document.getElementById('clima-viento-real')?.value || '';
   const climaHum = document.getElementById('clima-hum-real')?.value || '';
+  const litrosRealRaw = parseFloat(document.getElementById('dosis-litros-real')?.value);
+  const productoRealRaw = parseFloat(document.getElementById('dosis-producto-real')?.value);
 
-  // Aquí se guardará en Supabase cuando conectemos la API
-  // Por ahora confirmación visual
-  alert(`✅ Revisión guardada\n\n${marcados}/10 items verificados\nClima real: ${climaTemp} · ${climaViento} · ${climaHum}\n${obs ? 'Obs: ' + obs : 'Sin observaciones'}\n\nPróximamente se guardará automáticamente en Supabase.`);
+  const btn = evt?.target;
+  const btnTextoOriginal = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
+
+  const payload = {
+    nro_orden: ordenActualParaChecklist.nro_orden,
+    operador_nombre: ordenActualParaChecklist.operador_nombre,
+    fecha_verificacion: new Date().toISOString().split('T')[0],
+    litros_reales: isNaN(litrosRealRaw) ? null : litrosRealRaw,
+    producto_real: isNaN(productoRealRaw) ? null : productoRealRaw,
+    items_verificados: marcados,
+    total_items: totalItems,
+    epp_verificados: eppMarcados,
+    total_epp: totalEpp,
+    clima_temp_real: climaTemp || null,
+    clima_viento_real: climaViento || null,
+    clima_humedad_real: climaHum || null,
+    observaciones: obs || null,
+  };
+
+  try {
+    const resp = await fetch(`${SB_URL}/rest/v1/control_calidad_ordenes?on_conflict=nro_orden,operador_nombre,fecha_verificacion`, {
+      method: 'POST',
+      headers: {
+        'apikey': SB_KEY,
+        'Authorization': `Bearer ${SB_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify([payload])
+    });
+
+    if (!resp.ok) {
+      const texto = await resp.text();
+      alert('❌ Error guardando la revisión en Supabase: ' + resp.status + ' ' + texto.slice(0, 200));
+      return;
+    }
+
+    alert(`✅ Revisión guardada\n\n${marcados}/${totalItems} items verificados · ${eppMarcados}/${totalEpp} EPP\n${!isNaN(litrosRealRaw) ? litrosRealRaw + ' L registrados como tu parte' : 'Sin litros registrados'}\nClima real: ${climaTemp || '—'} · ${climaViento || '—'} · ${climaHum || '—'}\n${obs ? 'Obs: ' + obs : 'Sin observaciones'}`);
+    await cargarResumenControlOrden(ordenActualParaChecklist.nro_orden);
+  } catch (e) {
+    alert('❌ No se pudo guardar la revisión: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = btnTextoOriginal || '💾 Guardar revisión'; }
+  }
 }
 
 let eppChecks = {};
@@ -1114,11 +1233,18 @@ function abrirHojaSeguridad(producto) {
 // ── CONTRALORÍA ──
 function renderContraloria() {
   const hoy = new Date().toISOString().split('T')[0];
-  const ordenesHoy = ordenesDB.filter(o => o.fecha_aplicacion === hoy || ordenesDB === ORDENES);
+  // Incluye tanto las órdenes de hoy como las de fechas anteriores que
+  // todavía no se han aplicado (fecha planificada pasada, ejecución
+  // real más tardía) — ordenadas con las más atrasadas primero.
+  const ordenesHoy = ordenesDB
+    .filter(o => o.fecha_aplicacion <= hoy || ordenesDB === ORDENES)
+    .slice()
+    .sort((a, b) => (a.fecha_aplicacion || '').localeCompare(b.fecha_aplicacion || ''));
+  const ordenesAtrasadas = ordenesHoy.filter(o => o.fecha_aplicacion && o.fecha_aplicacion < hoy).length;
 
   // Stats
   document.getElementById('stats-row').innerHTML = `
-    <div class="stat-card"><div class="stat-num">${ordenesHoy.length}</div><div class="stat-label">Órdenes hoy</div></div>
+    <div class="stat-card"><div class="stat-num">${ordenesHoy.length}</div><div class="stat-label">Órdenes pendientes</div></div>
     <div class="stat-card"><div class="stat-num">${operadoresDB.filter(o=>o.nombre).length}</div><div class="stat-label">Operadores</div></div>
     <div class="stat-card" style="border-color:var(--rojo);background:var(--rojo-bg)">
       <div class="stat-num" style="color:var(--rojo)">${contarAlertasLicencias()}</div>
@@ -1127,20 +1253,28 @@ function renderContraloria() {
   `;
 
   // Lista órdenes
-  document.getElementById('ordenes-lista').innerHTML = ordenesHoy.map(o => `
-    <div class="orden-lista-item" onclick="modoContraloria=true; abrirOrdenOperador('${o.operador_nombre || o.operator_name || ''}')">>
+  document.getElementById('ordenes-lista').innerHTML = ordenesHoy.map(o => {
+    const diasAtraso = o.fecha_aplicacion ? Math.round((new Date(hoy) - new Date(o.fecha_aplicacion)) / 86400000) : 0;
+    const badge = diasAtraso > 0
+      ? `<span class="badge badge-rojo">Atrasada ${diasAtraso}d</span>`
+      : `<span class="badge badge-verde">Hoy</span>`;
+    const nombreEsc = (o.operador_nombre || o.operator_name || '').replace(/'/g, "\\'");
+    const nroEsc = String(o.nro_orden || o.code_oa || '').replace(/'/g, "\\'");
+    return `
+    <div class="orden-lista-item" onclick="modoContraloria=true; abrirOrdenOperador('${nombreEsc}', '${nroEsc}')">
       <div class="orden-lista-header">
         <div class="orden-lista-titulo">OA ${o.nro_orden || o.code_oa} — ${o.especie || ''}</div>
-        <span class="badge badge-verde">Activa</span>
+        ${badge}
       </div>
       <div class="orden-lista-detalle">
         <div class="orden-lista-dato">👤 ${o.operador_nombre || o.operator_name || 'Sin asignar'}</div>
         <div class="orden-lista-dato">🚜 ${o.maquina || '—'}</div>
         <div class="orden-lista-dato">📍 ${o.sectores || '—'}</div>
-        <div class="orden-lista-dato">🕖 ${o.hora_inicio_plan || '—'}</div>
+        <div class="orden-lista-dato">📅 ${o.fecha_aplicacion || '—'}${diasAtraso > 0 ? ' · 🕖 ' + (o.hora_inicio_plan || '—') : ''}</div>
       </div>
     </div>
-  `).join('') || '<div style="color:var(--gris);font-size:13px;padding:20px;text-align:center">Sin órdenes para hoy</div>';
+  `;
+  }).join('') || '<div style="color:var(--gris);font-size:13px;padding:20px;text-align:center">Sin órdenes pendientes</div>';
 
   // Lista operadores (el tab/elemento aún no existe en esta versión de la
   // vista Contraloría; se deja protegido para no romper el resto del render).
