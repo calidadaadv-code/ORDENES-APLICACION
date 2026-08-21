@@ -260,6 +260,15 @@
         <div class="btn-rol-desc">Acceso restringido · Solo personal autorizado</div>
       </div>
     </button>
+    <button class="btn-rol" onclick="abrirInformes()">
+      <div class="btn-rol-icon verde">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2d5a27" stroke-width="2"><path d="M9 17V9M15 17V5M5 17v-4"/><path d="M3 21h18"/></svg>
+      </div>
+      <div>
+        <div class="btn-rol-titulo">Informes</div>
+        <div class="btn-rol-desc">Controles de calidad guardados por orden</div>
+      </div>
+    </button>
   </div>
 </div>
 
@@ -285,12 +294,23 @@
   <div class="orden-body" id="orden-body"></div>
 </div>
 
+<!-- VISTA: INFORME DE APLICACIÓN -->
+<div class="vista" id="v-informe-oa">
+  <div class="orden-header">
+    <button class="back-btn" onclick="mostrarVista('v-contraloria'); cambiarTab('t-listas', document.getElementById('tab-btn-listas'))">← Volver</button>
+    <div class="orden-nro" id="informe-nro">OA N° —</div>
+    <div class="orden-titulo" id="informe-especie">—</div>
+    <div class="orden-sub" id="informe-sectores">—</div>
+  </div>
+  <div class="orden-body" id="informe-oa-body"></div>
+</div>
+
 <!-- VISTA: CONTRALORÍA -->
 <div class="vista" id="v-contraloria">
   <div class="cont-tabs">
     <button class="back-btn" style="color:var(--gris);padding:12px 16px;font-size:13px" onclick="mostrarVista('v-inicio')">←</button>
     <div class="tab activo" onclick="cambiarTab('t-ordenes',this)">Órdenes</div>
-    <div class="tab" onclick="cambiarTab('t-listas',this); cargarControlesGuardados()">Órdenes listas</div>
+    <div class="tab" id="tab-btn-listas" onclick="cambiarTab('t-listas',this); cargarControlesGuardados()">Órdenes listas</div>
     <div class="tab" onclick="cambiarTab('t-alertas',this)">Alertas</div>
   </div>
   <div class="cont-body">
@@ -327,6 +347,15 @@
 // ── ACCESO CONTROL DE CALIDAD ──
 function accederControlCalidad() {
   mostrarVista('v-contraloria');
+}
+
+// Entra directo a la pestaña "Órdenes listas" dentro de Control de Calidad
+// — el informe de los controles ya guardados — desde la tarjeta "Informes"
+// del menú principal, sin pasar por la pestaña "Órdenes" primero.
+function abrirInformes() {
+  mostrarVista('v-contraloria');
+  cambiarTab('t-listas', document.getElementById('tab-btn-listas'));
+  cargarControlesGuardados();
 }
 
 function verificarClaveInicio() {
@@ -1465,11 +1494,12 @@ async function cargarControlesGuardados() {
       const fecha = c.fecha_verificacion || (c.created_at ? c.created_at.split('T')[0] : '—');
       const clima = [c.clima_temp_real, c.clima_viento_real, c.clima_humedad_real].filter(Boolean).join(' · ');
       return `
-      <div class="card" style="margin-bottom:10px">
+      <div class="card" style="margin-bottom:10px;cursor:pointer" onclick="abrirInformeOA('${String(c.nro_orden).replace(/'/g, "\\'")}')">
         <div class="card-header">
           <div class="card-header-icon" style="background:var(--verde-bg)">📋</div>
           <div class="card-titulo" style="flex:1">OA ${c.nro_orden}${contexto ? ' — ' + contexto : ''}</div>
           ${marcadaAplicada ? '<span class="badge badge-verde">Orden aplicada</span>' : ''}
+          <span style="color:var(--gris);font-size:16px;margin-left:4px">›</span>
         </div>
         <div class="card-body">
           <div class="dato-row"><span class="dato-label">Operador</span><span class="dato-valor">${c.operador_nombre || '—'}</span></div>
@@ -1481,11 +1511,146 @@ async function cargarControlesGuardados() {
           ${clima ? `<div class="dato-row"><span class="dato-label">Clima real</span><span class="dato-valor">${clima}</span></div>` : ''}
           ${c.observaciones ? `<div class="dato-row" style="align-items:flex-start"><span class="dato-label">Observaciones</span><span class="dato-valor" style="text-align:right;max-width:60%">${c.observaciones}</span></div>` : ''}
         </div>
+        <div style="padding:0 16px 12px;font-size:11px;color:var(--verde);font-weight:600">Ver informe completo de esta aplicación →</div>
       </div>
     `;
     }).join('');
   } catch (e) {
     statusEl.textContent = 'No se pudieron cargar los controles guardados: ' + e.message;
+  }
+}
+
+// Color según qué tan cerca del 100% está un cumplimiento (verde ≥95%,
+// amarillo 70-95%, rojo <70%).
+function colorPct(pct) {
+  if (pct == null) return 'var(--gris)';
+  if (pct >= 95) return 'var(--verde)';
+  if (pct >= 70) return 'var(--amarillo)';
+  return 'var(--rojo)';
+}
+
+// Informe completo de UNA aplicación (OA): junta los controles guardados
+// por TODOS los operadores que participaron en esa orden y calcula
+// porcentajes de cumplimiento (checklist, EPP, litros aplicados vs
+// ordenados), además de mostrar el detalle de cada revisión.
+async function abrirInformeOA(nroOrden) {
+  mostrarVista('v-informe-oa');
+  document.getElementById('informe-nro').textContent = `OA N° ${nroOrden}`;
+  document.getElementById('informe-especie').textContent = 'Cargando…';
+  document.getElementById('informe-sectores').textContent = '';
+  const body = document.getElementById('informe-oa-body');
+  body.innerHTML = '<div style="color:var(--gris);font-size:13px;padding:20px;text-align:center">Cargando informe…</div>';
+
+  try {
+    const [rControles, rOrden] = await Promise.all([
+      fetch(`${SB_URL}/rest/v1/control_calidad_ordenes?nro_orden=eq.${encodeURIComponent(nroOrden)}&select=*&order=created_at.asc`, {
+        headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
+      }),
+      // Se trae directo de Supabase (sin límite de fecha) porque una
+      // orden que ya aparece en "Informes" puede ser más vieja que la
+      // ventana de DIAS_ATRASO_MAX que se usa para "pendientes".
+      fetch(`${SB_URL}/rest/v1/ordenes_aplicacion?nro_orden=eq.${encodeURIComponent(nroOrden)}&select=*&limit=1`, {
+        headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }
+      })
+    ]);
+    const controles = await rControles.json();
+    const ordenRows = await rOrden.json();
+    const orden = Array.isArray(ordenRows) && ordenRows.length ? ordenRows[0] : (ordenesDB.find(o => String(o.nro_orden || o.code_oa) === String(nroOrden)) || null);
+
+    document.getElementById('informe-especie').textContent = orden ? `${orden.especie || ''}${orden.variedad ? ' — ' + orden.variedad : ''}` : 'Orden no encontrada';
+    document.getElementById('informe-sectores').textContent = orden ? (orden.sectores || '') : '';
+
+    if (!Array.isArray(controles) || !controles.length) {
+      body.innerHTML = '<div class="card"><div class="card-body" style="text-align:center;padding:32px;color:var(--gris)">Todavía no hay controles de calidad guardados para esta orden.</div></div>';
+      return;
+    }
+
+    const litrosOrdenados = orden ? (Number(orden.mojamiento) || 0) * (Number(orden.hectareas) || 0) : null;
+    const sumLitros = controles.reduce((s, c) => s + (Number(c.litros_reales) || 0), 0);
+    const sumProducto = controles.reduce((s, c) => s + (Number(c.producto_real) || 0), 0);
+    const sumItemsOk = controles.reduce((s, c) => s + (Number(c.items_verificados) || 0), 0);
+    const sumItemsTotal = controles.reduce((s, c) => s + (Number(c.total_items) || 0), 0);
+    const sumEppOk = controles.reduce((s, c) => s + (Number(c.epp_verificados) || 0), 0);
+    const sumEppTotal = controles.reduce((s, c) => s + (Number(c.total_epp) || 0), 0);
+
+    const pctChecklist = sumItemsTotal > 0 ? Math.round(sumItemsOk / sumItemsTotal * 100) : null;
+    const pctEpp = sumEppTotal > 0 ? Math.round(sumEppOk / sumEppTotal * 100) : null;
+    const pctLitros = litrosOrdenados > 0 ? Math.round(sumLitros / litrosOrdenados * 100) : null;
+
+    const marcadaAplicada = ordenesCompletadasSet.has(String(nroOrden));
+    const productos = orden && Array.isArray(orden.productos) ? orden.productos : [];
+
+    body.innerHTML = `
+      <div class="stats-row" style="margin-bottom:14px">
+        <div class="stat-card"><div class="stat-num" style="color:${colorPct(pctChecklist)}">${pctChecklist != null ? pctChecklist + '%' : '—'}</div><div class="stat-label">Cumplimiento checklist</div></div>
+        <div class="stat-card"><div class="stat-num" style="color:${colorPct(pctEpp)}">${pctEpp != null ? pctEpp + '%' : '—'}</div><div class="stat-label">EPP verificado</div></div>
+        <div class="stat-card"><div class="stat-num" style="color:${colorPct(pctLitros)}">${pctLitros != null ? pctLitros + '%' : '—'}</div><div class="stat-label">Litros aplicados</div></div>
+      </div>
+
+      ${marcadaAplicada ? '<div style="margin-bottom:14px"><span class="badge badge-verde">✓ Orden marcada como aplicada</span></div>' : ''}
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-header-icon" style="background:var(--verde-bg)">🌿</div>
+          <div class="card-titulo">Datos de la aplicación</div>
+        </div>
+        <div class="card-body">
+          <div class="dato-row"><span class="dato-label">Fecha</span><span class="dato-valor">${orden?.fecha_aplicacion || '—'}</span></div>
+          <div class="dato-row"><span class="dato-label">Sectores</span><span class="dato-valor">${orden?.sectores || '—'}</span></div>
+          <div class="dato-row"><span class="dato-label">Hectáreas</span><span class="dato-valor">${orden?.hectareas || '—'} ha</span></div>
+          <div class="dato-row"><span class="dato-label">Mojamiento</span><span class="dato-valor">${orden?.mojamiento || '—'} L/ha</span></div>
+          <div class="dato-row"><span class="dato-label">Litros ordenados</span><span class="dato-valor">${litrosOrdenados ? litrosOrdenados.toFixed(0) + ' L' : '—'}</span></div>
+          <div class="dato-row"><span class="dato-label">Litros aplicados (todos)</span><span class="dato-valor" style="font-weight:700;color:${colorPct(pctLitros)}">${sumLitros.toFixed(0)} L</span></div>
+          ${sumProducto ? `<div class="dato-row"><span class="dato-label">Producto real (todos)</span><span class="dato-valor">${sumProducto.toFixed(2)}</span></div>` : ''}
+        </div>
+      </div>
+
+      ${productos.length ? `
+      <div class="card">
+        <div class="card-header">
+          <div class="card-header-icon" style="background:#fef3e8">💊</div>
+          <div class="card-titulo">Producto(s) ordenado(s)</div>
+        </div>
+        <div class="card-body">
+          ${productos.map(p => `
+            <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--gris-claro)">
+              <div style="font-size:14px;font-weight:700;color:var(--verde);margin-bottom:4px">${p.nombre || '—'}</div>
+              <div class="dato-row"><span class="dato-label">Objetivo</span><span class="dato-valor">${p.objetivo || '—'}</span></div>
+              <div class="dato-row"><span class="dato-label">Dosis / 100L</span><span class="dato-valor">${p.dosis_100l || '—'}</span></div>
+              <div class="dato-row"><span class="dato-label">Dosis / ha</span><span class="dato-valor">${p.dosis_ha || '—'}</span></div>
+            </div>
+          `).join('')}
+        </div>
+      </div>` : ''}
+
+      <div class="seccion-titulo">Revisiones guardadas (${controles.length})</div>
+      ${controles.map(c => {
+        const pctC = c.total_items ? Math.round((c.items_verificados || 0) / c.total_items * 100) : null;
+        const pctE = c.total_epp ? Math.round((c.epp_verificados || 0) / c.total_epp * 100) : null;
+        const clima = [c.clima_temp_real, c.clima_viento_real, c.clima_humedad_real].filter(Boolean).join(' · ');
+        return `
+        <div class="card">
+          <div class="card-header">
+            <div class="card-header-icon" style="background:var(--amarillo-bg)">👤</div>
+            <div class="card-titulo">${c.operador_nombre || '—'}</div>
+          </div>
+          <div class="card-body">
+            <div class="dato-row"><span class="dato-label">Fecha revisión</span><span class="dato-valor">${c.fecha_verificacion || '—'}</span></div>
+            <div class="dato-row"><span class="dato-label">Litros reales (su parte)</span><span class="dato-valor">${c.litros_reales != null ? c.litros_reales + ' L' : '—'}</span></div>
+            <div class="dato-row"><span class="dato-label">Producto real</span><span class="dato-valor">${c.producto_real != null ? c.producto_real : '—'}</span></div>
+            <div class="dato-row"><span class="dato-label">Checklist</span><span class="dato-valor" style="color:${colorPct(pctC)}">${c.items_verificados ?? 0}/${c.total_items ?? '—'}${pctC != null ? ' (' + pctC + '%)' : ''}</span></div>
+            <div class="dato-row"><span class="dato-label">EPP</span><span class="dato-valor" style="color:${colorPct(pctE)}">${c.epp_verificados ?? 0}/${c.total_epp ?? '—'}${pctE != null ? ' (' + pctE + '%)' : ''}</span></div>
+            ${clima ? `<div class="dato-row"><span class="dato-label">Clima real</span><span class="dato-valor">${clima}</span></div>` : ''}
+            ${c.observaciones ? `<div class="dato-row" style="align-items:flex-start"><span class="dato-label">Observaciones</span><span class="dato-valor" style="text-align:right;max-width:60%">${c.observaciones}</span></div>` : ''}
+          </div>
+        </div>
+      `;
+      }).join('')}
+
+      <div style="height:24px"></div>
+    `;
+  } catch (e) {
+    body.innerHTML = `<div class="card"><div class="card-body" style="text-align:center;padding:32px;color:var(--rojo)">No se pudo cargar el informe: ${e.message}</div></div>`;
   }
 }
 
