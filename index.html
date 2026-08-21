@@ -328,6 +328,17 @@ let operadoresDB = OPERADORES;
 let ordenesDB = ORDENES;
 let vistaActual = 'v-inicio';
 
+// Cuántos días atrás se muestran en "Órdenes pendientes" además de las de
+// hoy. Las que llevan más días atrasados sin marcarse como aplicadas dejan
+// de listarse solas (se asume que están abandonadas / son datos viejos);
+// para editar el límite, cambia este número.
+const DIAS_ATRASO_MAX = 10;
+
+// Números de OA marcados manualmente como "ya aplicada" (con el botón
+// ✓ de cada tarjeta) — se sacan de la lista de pendientes aunque su fecha
+// siga dentro del rango de DIAS_ATRASO_MAX.
+let ordenesCompletadasSet = new Set();
+
 // ── INICIALIZACIÓN ──
 document.addEventListener('DOMContentLoaded', () => {
   const ahora = new Date();
@@ -342,18 +353,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function cargarDesdeSupabase() {
   try {
-    const [rOps, rOrds] = await Promise.all([
+    const hoy = new Date();
+    const hoyStr = hoy.toISOString().split('T')[0];
+    const limite = new Date(hoy);
+    limite.setDate(limite.getDate() - DIAS_ATRASO_MAX);
+    const limiteStr = limite.toISOString().split('T')[0];
+
+    const [rOps, rOrds, rCompletadas] = await Promise.all([
       fetch(`${SB_URL}/rest/v1/operadores?activo=eq.true&select=*`, { headers: { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}` } }),
-      // "lte" (menor o igual a hoy) en vez de "eq" (igual a hoy): así también
-      // aparecen órdenes de días anteriores que aún no se han aplicado —
-      // una orden puede tener fecha planificada pasada pero ejecutarse
-      // varios días después.
-      fetch(`${SB_URL}/rest/v1/ordenes_aplicacion?fecha_aplicacion=lte.${new Date().toISOString().split('T')[0]}&select=*&order=fecha_aplicacion.asc`, { headers: { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}` } })
+      // Trae desde "hace DIAS_ATRASO_MAX días" hasta hoy (no solo hoy): así
+      // aparecen también órdenes de días anteriores que aún no se han
+      // aplicado — una orden puede tener fecha planificada pasada pero
+      // ejecutarse varios días después. Las más viejas que eso ya no se
+      // listan solas (ver DIAS_ATRASO_MAX arriba).
+      fetch(`${SB_URL}/rest/v1/ordenes_aplicacion?fecha_aplicacion=gte.${limiteStr}&fecha_aplicacion=lte.${hoyStr}&select=*&order=fecha_aplicacion.asc`, { headers: { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}` } }),
+      fetch(`${SB_URL}/rest/v1/ordenes_completadas?select=nro_orden`, { headers: { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}` } })
     ]);
     const ops = await rOps.json();
     const ords = await rOrds.json();
+    const completadas = await rCompletadas.json();
     if (Array.isArray(ops) && ops.length > 0) operadoresDB = ops.map(o => ({ nombre: o.nombre, tractor: o.tractor, pulverizadora: o.pulverizadora, telefono: o.telefono, venc_licencia: o.vencimiento_licencia }));
     if (Array.isArray(ords) && ords.length > 0) ordenesDB = ords;
+    if (Array.isArray(completadas)) ordenesCompletadasSet = new Set(completadas.map(c => String(c.nro_orden)));
     renderListaOperadores();
     renderContraloria();
   } catch(e) { console.log("Usando datos de ejemplo:", e.message); }
@@ -1230,6 +1251,38 @@ function abrirHojaSeguridad(producto) {
   alert(`⚠️ HOJA DE SEGURIDAD (SDS)\n\n${producto}\n\nAquí se abrirá la hoja de datos de seguridad (SDS) del producto desde Google Drive.\n\nContiene: riesgos para la salud, primeros auxilios, almacenamiento y manejo de emergencias.`);
 }
 
+// Marca una orden completa (todos los operadores que comparten ese nro_orden)
+// como ya aplicada, para que deje de aparecer en "Órdenes pendientes" sin
+// importar cuántos días de atraso lleve. Queda guardado en Supabase, así que
+// se mantiene aunque se recargue la página o se vuelva a subir el Excel.
+async function marcarOrdenAplicada(nroOrden, btn) {
+  if (!confirm(`¿Marcar la OA ${nroOrden} como ya aplicada?\n\nDejará de aparecer en la lista de pendientes.`)) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
+  try {
+    const resp = await fetch(`${SB_URL}/rest/v1/ordenes_completadas?on_conflict=nro_orden`, {
+      method: 'POST',
+      headers: {
+        'apikey': SB_KEY,
+        'Authorization': `Bearer ${SB_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify([{ nro_orden: String(nroOrden) }])
+    });
+    if (!resp.ok) {
+      const texto = await resp.text();
+      alert('❌ No se pudo marcar la orden: ' + resp.status + ' ' + texto.slice(0, 200));
+      if (btn) { btn.disabled = false; btn.textContent = '✓ Marcar OA ' + nroOrden + ' como ya aplicada'; }
+      return;
+    }
+    ordenesCompletadasSet.add(String(nroOrden));
+    renderContraloria();
+  } catch (e) {
+    alert('❌ No se pudo marcar la orden: ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = '✓ Marcar OA ' + nroOrden + ' como ya aplicada'; }
+  }
+}
+
 // ── CONTRALORÍA ──
 function renderContraloria() {
   const hoy = new Date().toISOString().split('T')[0];
@@ -1237,7 +1290,7 @@ function renderContraloria() {
   // todavía no se han aplicado (fecha planificada pasada, ejecución
   // real más tardía) — ordenadas con las más atrasadas primero.
   const ordenesHoy = ordenesDB
-    .filter(o => o.fecha_aplicacion <= hoy || ordenesDB === ORDENES)
+    .filter(o => (o.fecha_aplicacion <= hoy || ordenesDB === ORDENES) && !ordenesCompletadasSet.has(String(o.nro_orden || o.code_oa)))
     .slice()
     .sort((a, b) => (a.fecha_aplicacion || '').localeCompare(b.fecha_aplicacion || ''));
   const ordenesAtrasadas = ordenesHoy.filter(o => o.fecha_aplicacion && o.fecha_aplicacion < hoy).length;
@@ -1272,6 +1325,10 @@ function renderContraloria() {
         <div class="orden-lista-dato">📍 ${o.sectores || '—'}</div>
         <div class="orden-lista-dato">📅 ${o.fecha_aplicacion || '—'}${diasAtraso > 0 ? ' · 🕖 ' + (o.hora_inicio_plan || '—') : ''}</div>
       </div>
+      <button onclick="event.stopPropagation(); marcarOrdenAplicada('${nroEsc}', this)"
+        style="margin-top:8px;width:100%;padding:8px;border:1px solid var(--verde-claro);border-radius:8px;background:var(--verde-bg);color:var(--verde);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">
+        ✓ Marcar OA ${o.nro_orden || o.code_oa} como ya aplicada
+      </button>
     </div>
   `;
   }).join('') || '<div style="color:var(--gris);font-size:13px;padding:20px;text-align:center">Sin órdenes pendientes</div>';
